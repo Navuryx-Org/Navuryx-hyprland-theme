@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -u
+STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}
+CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
+
+for cmd in hyprctl qs waybar rofi kitty swww grim slurp wl-copy wpctl nmcli bluetoothctl flatpak yay paru ollama; do
+  if command -v "$cmd" >/dev/null 2>&1; then
+    printf '[ok] %s\n' "$cmd"
+  else
+    printf '[optional/missing] %s\n' "$cmd"
+  fi
+done
+
+[[ -f "$CONFIG_HOME/quickshell/navuryx/shell.qml" ]] && echo '[ok] Navuryx shell installed' || echo '[missing] Navuryx shell'
+[[ -f "$STATE_HOME/navuryx/managed-files.txt" ]] && echo '[ok] Managed-file manifest present' || echo '[missing] Managed-file manifest'
+[[ -f "$STATE_HOME/navuryx/installed-packages.tsv" ]] && {
+  count=$(wc -l < "$STATE_HOME/navuryx/installed-packages.tsv")
+  echo "[ok] Recorded Navuryx packages: $count"
+} || echo '[info] No Navuryx package manifest'
+[[ -f "$STATE_HOME/navuryx/install-options.env" ]] && {
+  echo '[info] Last install options:'
+  sed 's/^/  /' "$STATE_HOME/navuryx/install-options.env"
+}

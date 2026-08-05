@@ -1,0 +1,492 @@
+#!/usr/bin/env bash
+set -uo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SELF_DIR/navuryx-common" ]]; then
+  source "$SELF_DIR/navuryx-common"
+else
+  source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+fi
+set +e
+NAV_CONFIG="${NAV_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/navuryx}"
+NAV_DATA="${NAV_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/navuryx}"
+
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+FAILURES=0
+WARNINGS=0
+
+section() { printf '\n== %s ==\n' "$1"; }
+
+ok() { printf '  [ ok ]   %s\n' "$1"; }
+
+warn() {
+  printf '  [ warn ] %s\n' "$1"
+  WARNINGS=$((WARNINGS + 1))
+}
+
+fail() {
+  printf '  [ fail ] %s\n' "$1"
+  FAILURES=$((FAILURES + 1))
+}
+
+check_command() {
+  local cmd="$1" level="${2:-required}"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    ok "$cmd"
+  elif [[ "$level" == required ]]; then
+    fail "$cmd is missing"
+  else
+    warn "$cmd is not installed (optional)"
+  fi
+}
+
+check_file() {
+  local path="$1" level="${2:-required}"
+  if [[ -e "$path" ]]; then
+    ok "$path"
+  elif [[ "$level" == required ]]; then
+    fail "missing $path"
+  else
+    warn "missing $path (optional)"
+  fi
+}
+
+check_process() {
+  local name="$1" level="${2:-required}"
+  if pgrep -x "$name" >/dev/null 2>&1; then
+    ok "$name is running"
+  elif [[ "$level" == required ]]; then
+    fail "$name is not running"
+  else
+    warn "$name is not running (optional)"
+  fi
+}
+
+hypr_version() {
+  local raw="" candidate
+  for candidate in Hyprland hyprland; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      raw="$("$candidate" --version 2>/dev/null || true)"
+      [[ -n "$raw" ]] && break
+    fi
+  done
+  if [[ -z "$raw" ]] && command -v hyprctl >/dev/null 2>&1; then
+    raw="$(hyprctl version 2>/dev/null || true)"
+  fi
+  if [[ -z "$raw" ]] && command -v pacman >/dev/null 2>&1; then
+    raw="$(pacman -Q hyprland 2>/dev/null || true)"
+  fi
+  printf '%s' "$raw" | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1
+}
+
+hypr_backend() {
+  local version="$1"
+  if [[ -z "$version" ]]; then
+    printf unknown
+  elif [[ "$(printf '%s\n' 0.55 "$version" | sort -V | head -1)" == 0.55 ]]; then
+    printf lua
+  else
+    printf hyprlang
+  fi
+}
+
+hypr_entrypoint() {
+  local backend
+  backend="$(hypr_backend "$(hypr_version)")"
+  if [[ "$backend" != hyprlang && -f "$CONFIG_HOME/hypr/hyprland.lua" ]]; then
+    printf '%s' "$CONFIG_HOME/hypr/hyprland.lua"
+  elif [[ -f "$CONFIG_HOME/hypr/hyprland.conf" ]]; then
+    printf '%s' "$CONFIG_HOME/hypr/hyprland.conf"
+  else
+    return 1
+  fi
+}
+
+install_source() {
+  local recorded="$NAV_DATA/install-source"
+  [[ -f "$recorded" ]] || return 1
+  local path
+  path="$(head -1 "$recorded" 2>/dev/null)"
+  [[ -n "$path" && -d "$path/config" ]] || return 1
+  printf '%s' "$path"
+}
+
+active_report() {
+  local entrypoint
+  entrypoint="$(hypr_entrypoint)"
+  if [[ -z "$entrypoint" ]]; then
+    fail 'no Hyprland entrypoint in ~/.config/hypr (Navuryx is not installed)'
+    return 0
+  fi
+  ok "Hyprland will load: $entrypoint"
+  if [[ "$entrypoint" == *hyprland.lua && -f "$CONFIG_HOME/hypr/hyprland.conf" ]]; then
+    printf '  info     hyprland.conf is present but ignored; Hyprland 0.55+ prefers hyprland.lua\n'
+  fi
+
+  if [[ -s "$CONFIG_HOME/navuryx/hyprland-config-errors.log" ]]; then
+    fail 'Hyprland reported Navuryx config errors; see ~/.config/navuryx/hyprland-config-errors.log'
+  else
+    ok 'no recorded Hyprland config errors'
+  fi
+
+  if ! grep -q navuryx "$entrypoint" 2>/dev/null; then
+    fail "$entrypoint does not reference Navuryx; another theme owns this config"
+  else
+    ok 'entrypoint references Navuryx modules'
+  fi
+
+  local source
+  if source="$(install_source)"; then
+    ok "install source: $source"
+    if command -v diff >/dev/null 2>&1; then
+      local drift=0 item
+      local -a skip=(
+        -x hyprpaper.conf -x hyprlock.conf -x wallpaper.conf -x current-wallpaper
+        -x wallpapers -x shell.conf -x .navuryx-install
+        -x hyprland-config-errors.log -x ai.env
+      )
+      for item in hypr waybar navuryx rofi; do
+        [[ -d "$source/config/$item" && -d "$CONFIG_HOME/$item" ]] || continue
+        if ! diff -qr "${skip[@]}" "$source/config/$item" "$CONFIG_HOME/$item" >/dev/null 2>&1; then
+          warn "$CONFIG_HOME/$item differs from $source/config/$item"
+          drift=$((drift + 1))
+        fi
+      done
+      if ((drift == 0)); then
+        ok 'installed config matches the repository checkout'
+      else
+        printf '  info     re-run ./install.sh from %s to resync\n' "$source"
+      fi
+    fi
+  else
+    warn 'install source not recorded; run ./install.sh again to record it'
+  fi
+
+  if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    warn 'not running inside Hyprland, so active-session checks were skipped'
+    return 0
+  fi
+
+  local hypr_pid
+  hypr_pid="$(pgrep -x Hyprland 2>/dev/null | head -1)"
+  if [[ -n "$hypr_pid" && -f "$entrypoint" ]]; then
+    if [[ "$entrypoint" -nt "/proc/$hypr_pid" ]]; then
+      fail 'STALE SESSION: the config was installed after Hyprland started. Log out and log back in.'
+    else
+      ok 'the running Hyprland session started after the config was installed'
+    fi
+  fi
+
+  if pgrep -x waybar >/dev/null 2>&1; then
+    local waybar_pid waybar_args
+    waybar_pid="$(pgrep -x waybar | head -1)"
+    waybar_args="$(tr '\0' ' ' < "/proc/$waybar_pid/cmdline" 2>/dev/null)"
+    if [[ "$waybar_args" == *navuryx* || "$waybar_args" == *"$CONFIG_HOME/waybar"* ]]; then
+      ok "waybar is running with the Navuryx config"
+    else
+      warn "waybar is running but not with a Navuryx config: $waybar_args"
+    fi
+  else
+    fail 'waybar is not running; start it with ~/.config/waybar/launch.sh'
+  fi
+}
+
+state_report() {
+  local version backend
+  version="$(hypr_version)"
+  backend="$(hypr_backend "$version")"
+
+  printf 'Navuryx install state\n'
+  printf 'Generated: %s\n' "$(date -Iseconds)"
+  printf 'Host: %s\n' "$(uname -srm 2>/dev/null)"
+
+  printf '\n-- hyprland --\n'
+  printf '  version   %s\n' "${version:-NOT DETECTED}"
+  printf '  backend   %s\n' "$backend"
+  case "$backend" in
+    lua) printf '  note      0.55+ loads hyprland.lua and ignores hyprland.conf\n' ;;
+    hyprlang) printf '  note      below 0.55, so only hyprland.conf is read\n' ;;
+    *) printf '  note      version unknown; Hyprland picks .lua if present, else .conf\n' ;;
+  esac
+
+  printf '\n-- install marker --\n'
+  if [[ -f "$CONFIG_HOME/navuryx/.navuryx-install" ]]; then
+    sed 's/^/  /' "$CONFIG_HOME/navuryx/.navuryx-install"
+  else
+    printf '  NOT INSTALLED: %s/navuryx/.navuryx-install is missing\n' "$CONFIG_HOME"
+    printf '  install.sh never reached the config copy step.\n'
+  fi
+
+  printf '\n-- installed config folders --\n'
+  local item
+  for item in hypr waybar rofi kitty mako wlogout navuryx fastfetch quickshell gtk-3.0 gtk-4.0; do
+    if [[ -e "$CONFIG_HOME/$item" ]]; then
+      printf '  present  %s\n' "$CONFIG_HOME/$item"
+    else
+      printf '  MISSING  %s\n' "$CONFIG_HOME/$item"
+    fi
+  done
+
+  printf '\n-- hypr entrypoint --\n'
+  printf '  hyprland.lua          %s\n' "$([[ -f "$CONFIG_HOME/hypr/hyprland.lua" ]] && printf present || printf MISSING)"
+  printf '  hyprland.lua.disabled %s\n' "$([[ -f "$CONFIG_HOME/hypr/hyprland.lua.disabled" ]] && printf present || printf absent)"
+  printf '  hyprland.conf         %s\n' "$([[ -f "$CONFIG_HOME/hypr/hyprland.conf" ]] && printf present || printf MISSING)"
+  printf '  effective             %s\n' "$(hypr_entrypoint || printf none)"
+
+  printf '\n-- what hyprland actually loaded --\n'
+  local hypr_pid cmdline
+  hypr_pid="$(pgrep -x Hyprland 2>/dev/null | head -1)"
+  if [[ -z "$hypr_pid" ]]; then
+    hypr_pid="$(pgrep -x hyprland 2>/dev/null | head -1)"
+  fi
+  if [[ -n "$hypr_pid" ]]; then
+    cmdline="$(tr '\0' ' ' < "/proc/$hypr_pid/cmdline" 2>/dev/null)"
+    printf '  pid       %s\n' "$hypr_pid"
+    printf '  cmdline   %s\n' "${cmdline:-unavailable}"
+    if [[ "$cmdline" == *-c* || "$cmdline" == *--config* ]]; then
+      printf '  WARNING   Hyprland was started with an explicit --config path; Navuryx files may be ignored\n'
+    fi
+  else
+    printf '  Hyprland process not found\n'
+  fi
+  if [[ -f "$CONFIG_HOME/navuryx/hyprland-config-status" ]]; then
+    printf '  lua backend ran and reported:\n'
+    sed 's/^/    /' "$CONFIG_HOME/navuryx/hyprland-config-status"
+  else
+    printf '  no lua status file, so the Lua config has never run on this machine\n'
+  fi
+
+  printf '\n-- config errors --\n'
+  if [[ -s "$CONFIG_HOME/navuryx/hyprland-config-errors.log" ]]; then
+    sed 's/^/  /' "$CONFIG_HOME/navuryx/hyprland-config-errors.log"
+  else
+    printf '  none recorded\n'
+  fi
+  if command -v hyprctl >/dev/null 2>&1 && [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    printf '  hyprctl configerrors:\n'
+    hyprctl configerrors 2>/dev/null | sed 's/^/    /' || printf '    unavailable\n'
+  fi
+
+  printf '\n-- binaries --\n'
+  local missing_packages=() pair binary package
+  for pair in \
+    'Hyprland:hyprland' 'hyprctl:hyprland' 'waybar:waybar' 'hyprpaper:hyprpaper' \
+    'rofi:rofi-wayland' 'kitty:kitty' 'mako:mako' 'jq:jq' 'notify-send:libnotify' \
+    'wl-copy:wl-clipboard' 'grim:grim' 'slurp:slurp' 'python3:python'
+  do
+    binary="${pair%%:*}"
+    package="${pair#*:}"
+    if command -v "$binary" >/dev/null 2>&1; then
+      printf '  %-12s %s\n' "$binary" "$(command -v "$binary")"
+    else
+      printf '  %-12s MISSING (pacman: %s)\n' "$binary" "$package"
+      missing_packages+=("$package")
+    fi
+  done
+  for binary in wlogout cliphist qs quickshell hypridle hyprlock; do
+    printf '  %-12s %s\n' "$binary" "$(command -v "$binary" 2>/dev/null || printf 'not installed (optional)')"
+  done
+  if ((${#missing_packages[@]})); then
+    printf '  FIX: sudo pacman -S --needed %s\n' "$(printf '%s\n' "${missing_packages[@]}" | sort -u | tr '\n' ' ')"
+  else
+    printf '  all required programs are installed\n'
+  fi
+
+  printf '\n-- processes --\n'
+  for item in Hyprland waybar hyprpaper mako hypridle quickshell qs; do
+    printf '  %-10s %s\n' "$item" "$(pgrep -x "$item" >/dev/null 2>&1 && printf running || printf 'not running')"
+  done
+
+  printf '\n-- workspaces --\n'
+  if command -v hyprctl >/dev/null 2>&1 && [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    printf '  live workspaces: %s\n' "$(hyprctl workspaces 2>/dev/null | grep -c '^workspace ID' || printf 0)"
+    printf '  configured persistent workspaces in the entrypoint: %s\n' \
+      "$(grep -c 'persistent' "$(hypr_entrypoint 2>/dev/null)" 2>/dev/null || printf 0)"
+  else
+    printf '  no live session; persistent entries in entrypoint: %s\n' \
+      "$(grep -c 'persistent' "$(hypr_entrypoint 2>/dev/null)" 2>/dev/null || printf 0)"
+  fi
+  printf '  theme.lua workspace_rule calls: %s\n' \
+    "$(grep -c 'hl.workspace_rule' "$CONFIG_HOME/hypr/navuryx/theme.lua" 2>/dev/null || printf 0)"
+
+  printf '\n-- keybinds --\n'
+  local entrypoint bindsource
+  entrypoint="$(hypr_entrypoint 2>/dev/null || printf '')"
+  if [[ "$entrypoint" == *hyprland.lua ]]; then
+    bindsource="$CONFIG_HOME/hypr/navuryx/binds.lua"
+  else
+    bindsource="$entrypoint"
+  fi
+  printf '  bind source %s\n' "${bindsource:-none}"
+  for item in navuryx-terminal navuryx-spotlight navuryx-ai navuryx-settings navuryx-control navuryx-overview navuryx-keybinds; do
+    if [[ -n "$bindsource" ]] && grep -qF "$item" "$bindsource" 2>/dev/null; then
+      printf '  %-20s declared\n' "$item"
+    else
+      printf '  %-20s NOT BOUND\n' "$item"
+    fi
+  done
+  if command -v hyprctl >/dev/null 2>&1 && [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    printf '  live binds registered: %s\n' "$(hyprctl binds 2>/dev/null | grep -c '^bind' || printf 0)"
+    printf '  live binds mentioning navuryx: %s\n' "$(hyprctl binds 2>/dev/null | grep -c navuryx || printf 0)"
+  fi
+
+  printf '\n-- navuryx tools executable --\n'
+  local tool notexec=0
+  for tool in "$CONFIG_HOME/navuryx/bin/"navuryx-*; do
+    [[ -e "$tool" ]] || continue
+    if [[ ! -x "$tool" ]]; then
+      printf '  NOT EXECUTABLE %s\n' "$tool"
+      notexec=$((notexec + 1))
+    fi
+  done
+  if ((notexec == 0)); then
+    printf '  all Navuryx tools are executable\n'
+  else
+    printf '  FIX: chmod +x %s/navuryx/bin/*\n' "$CONFIG_HOME"
+  fi
+
+  printf '\n-- session --\n'
+  printf '  HYPRLAND_INSTANCE_SIGNATURE=%s\n' "${HYPRLAND_INSTANCE_SIGNATURE:-unset}"
+  printf '  XDG_CURRENT_DESKTOP=%s\n' "${XDG_CURRENT_DESKTOP:-unset}"
+  printf '  XDG_SESSION_TYPE=%s\n' "${XDG_SESSION_TYPE:-unset}"
+  printf '  XDG_SESSION_DESKTOP=%s\n' "${XDG_SESSION_DESKTOP:-unset}"
+  printf '  XDG_CONFIG_HOME=%s\n' "${XDG_CONFIG_HOME:-unset (defaults to ~/.config)}"
+  printf '  DESKTOP_SESSION=%s\n' "${DESKTOP_SESSION:-unset}"
+  printf '  uwsm installed: %s\n' "$(command -v uwsm >/dev/null 2>&1 && printf yes || printf no)"
+  if [[ -n "${XDG_CONFIG_HOME:-}" && "${XDG_CONFIG_HOME}" != "$HOME/.config" ]]; then
+    printf '  WARNING XDG_CONFIG_HOME is not ~/.config; Hyprland must use the same value\n'
+  fi
+  if [[ -n "${XDG_CURRENT_DESKTOP:-}" && "${XDG_CURRENT_DESKTOP}" != *Hyprland* ]]; then
+    printf '  WARNING this session is %s, not Hyprland; Navuryx cannot theme it\n' "$XDG_CURRENT_DESKTOP"
+  fi
+  if command -v loginctl >/dev/null 2>&1; then
+    printf '  loginctl session type: %s\n' "$(loginctl show-session "$(loginctl 2>/dev/null | awk -v u="$USER" '$3==u {print $1; exit}')" -p Type --value 2>/dev/null || printf unknown)"
+  fi
+
+  printf '\n-- wallpaper --\n'
+  printf '  link  %s\n' "$(readlink -f "$CONFIG_HOME/navuryx/current-wallpaper" 2>/dev/null || printf MISSING)"
+  printf '  count %s\n' "$(find "$CONFIG_HOME/navuryx/wallpapers" -maxdepth 1 -type f 2>/dev/null | wc -l)"
+
+  printf '\n-- active vs installed --\n'
+  active_report
+
+  printf '\nShare this whole output when reporting that the UI did not change.\n'
+}
+
+report() {
+  printf 'Navuryx doctor\n'
+  printf 'Generated: %s\n' "$(date -Iseconds)"
+
+  section 'Session'
+  if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    ok "Hyprland session active"
+  else
+    warn 'No active Hyprland session detected'
+  fi
+  if command -v Hyprland >/dev/null 2>&1; then
+    ok "Hyprland $(Hyprland --version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
+  else
+    fail 'Hyprland is not installed'
+  fi
+  printf '  info     XDG_CURRENT_DESKTOP=%s\n' "${XDG_CURRENT_DESKTOP:-unset}"
+
+  section 'Core commands'
+  local cmd
+  for cmd in hyprctl waybar rofi kitty notify-send jq; do
+    check_command "$cmd"
+  done
+  for cmd in hyprpaper swww matugen grim slurp wl-copy cliphist wlogout tesseract satty swappy hyprsunset gum yay paru flatpak; do
+    check_command "$cmd" optional
+  done
+
+  section 'Configuration'
+  check_file "$CONFIG_HOME/hypr/hyprland.conf"
+  check_file "$CONFIG_HOME/hypr/hyprland.lua"
+  check_file "$CONFIG_HOME/waybar/config.jsonc"
+  check_file "$CONFIG_HOME/waybar/style.css"
+  check_file "$CONFIG_HOME/rofi/navuryx.rasi"
+  check_file "$CONFIG_HOME/navuryx/shell.conf" optional
+  check_file "$CONFIG_HOME/navuryx/.navuryx-install" optional
+
+  section 'Wallpaper'
+  if [[ -e "$CONFIG_HOME/navuryx/current-wallpaper" ]]; then
+    ok "current wallpaper -> $(readlink -f "$CONFIG_HOME/navuryx/current-wallpaper" 2>/dev/null)"
+  else
+    fail 'no current wallpaper link'
+  fi
+  if compgen -G "$CONFIG_HOME/navuryx/wallpapers/*" >/dev/null 2>&1; then
+    ok "$(find "$CONFIG_HOME/navuryx/wallpapers" -maxdepth 1 -type f | wc -l) wallpapers installed"
+  else
+    fail 'wallpapers folder is empty'
+  fi
+
+  section 'Processes'
+  check_process waybar
+  check_process hyprpaper optional
+  check_process mako optional
+  check_process hypridle optional
+  check_process quickshell optional
+
+  section 'Navuryx tools'
+  local tool
+  for tool in "$NAV_CONFIG/bin/"navuryx-*; do
+    [[ -e "$tool" ]] || continue
+    if [[ -x "$tool" ]]; then
+      ok "$(basename "$tool")"
+    else
+      fail "$(basename "$tool") is not executable"
+    fi
+  done
+
+  section 'Network and VPN'
+  if command -v nmcli >/dev/null 2>&1; then
+    ok "NetworkManager: $(nmcli -t -f STATE general 2>/dev/null | head -1)"
+  else
+    warn 'nmcli not installed'
+  fi
+  if [[ -x "$NAV_CONFIG/bin/navuryx-vpn" ]]; then
+    ok "VPN status: $("$NAV_CONFIG/bin/navuryx-vpn" --status 2>/dev/null)"
+  else
+    warn 'navuryx-vpn is missing'
+  fi
+
+  section 'State'
+  check_file "$NAV_DATA" optional
+  check_file "$NAV_DATA/installed-packages" optional
+  if [[ -f "$NAV_DATA/last-backup" ]]; then
+    ok "last backup: $(cat "$NAV_DATA/last-backup")"
+  else
+    warn 'no install backup recorded'
+  fi
+  check_file "$STATE_HOME/navuryx" optional
+
+  section 'Active vs installed'
+  active_report
+
+  section 'Summary'
+  printf '  failures: %s\n' "$FAILURES"
+  printf '  warnings: %s\n' "$WARNINGS"
+  if ((FAILURES == 0)); then
+    printf '  Navuryx looks healthy.\n'
+  else
+    printf '  Fix the failures above, then run navuryx-doctor again.\n'
+  fi
+}
+
+case "${1:-}" in
+  --state)
+    state_report
+    ;;
+  --print|--stdout)
+    report
+    ;;
+  *)
+    out="$(mktemp)"
+    report > "$out"
+    if [[ -t 1 ]]; then
+      cat "$out"
+    else
+      open_terminal_file "$out" 'Navuryx doctor'
+    fi
+    ;;
+esac

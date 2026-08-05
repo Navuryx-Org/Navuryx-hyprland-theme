@@ -1,0 +1,45 @@
+id	name	source	status
+hyprland-config	Hyprland config (lua entrypoint + conf fallback)	Navuryx	implemented
+waybar-bar	Waybar status bar with launch lock	Navuryx	implemented
+quickshell-panel	Optional Quickshell control panel	Navuryx	implemented
+spotlight	Spotlight launcher (apps/run/windows/files)	Navuryx	implemented
+command-palette	Command palette	Navuryx	implemented
+overview	Workspace overview	Navuryx	implemented
+control-center	Control center	Navuryx	implemented
+notification-center	Notification center	Navuryx	implemented
+settings-hub	Unified settings hub with pages	Navuryx	implemented
+welcome	First-run welcome page	Navuryx	implemented
+theme-engine	Theme packs and matugen Material colors	Navuryx	implemented
+appearance-mode	Appearance auto/dark/light	Navuryx	implemented
+wallpaper-manager	Wallpaper picker, next, random, transitions	Navuryx	implemented
+wallpaper-per-monitor	Per-monitor wallpapers	Navuryx	implemented
+wallpaper-daemon	Wallpaper rotation daemon	Navuryx	implemented
+wallpaper-cache	Colour extraction cache	Navuryx	implemented
+screenshot	Screenshot, annotate, OCR	Navuryx	implemented
+record	Screen recording	Navuryx	implemented
+clipboard	Clipboard history	Navuryx	implemented
+osd	Volume and brightness OSD	Navuryx	implemented
+power-menu	Power menu (wlogout with rofi fallback)	Navuryx	implemented
+lock-idle	hyprlock and hypridle	Navuryx	implemented
+ai-assistant	Navuryx AI assistant	Navuryx	implemented
+ai-screen	Ask about a screen region	Navuryx	implemented
+keybind-cheatsheet	Keybinding cheatsheet and override editor	Navuryx	implemented
+gaming-profile	Gaming and performance profile toggle	Navuryx	implemented
+vpn-manager	VPN install, status, connect and disconnect	Navuryx	implemented
+vpn-waybar	VPN status module in Waybar	Navuryx	implemented
+discord-clients	Discord client multi-select install (Discord, Vesktop, Navtop, Legcord, WebCord)	Navuryx	implemented
+navtop-install	Navtop install from a Navcord/Navtop release or a bun source build	Navuryx	implemented
+browser-select	Browser multi-select install	Navuryx	implemented
+doctor	Diagnostics doctor	Navuryx	implemented
+features-audit	Feature registry audit	Navuryx	implemented
+backup-restore	Backup, snapshot and restore	Navuryx	implemented
+package-manifest	Installed package manifest for clean uninstall	Navuryx	implemented
+quickshell-shell	Full Quickshell shell (ii / waffle)	Navuryx	deferred
+rust-daemon	Rust configuration daemon	Navuryx	deferred
+live-iso	Live ISO and system installer	Navuryx	deferred
+window-thumbnails	Live window thumbnails in overview	Navuryx	deferred
+theme-marketplace	Theme marketplace and themepatcher	Navuryx	deferred
+visual-regression	Visual regression test suite	Navuryx	deferred
+cloud-translate	Cloud screen translation and lens search	Navuryx	deferred
+sidebar-widgets	Sidebar widget stack	Navuryx	deferred
+hyprmod	Navuryx HyprMod stack and Flatpak welcome app	Navuryx	deferred

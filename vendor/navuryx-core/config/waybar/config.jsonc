@@ -1,0 +1,180 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 40,
+  "spacing": 8,
+  "margin-top": 8,
+  "margin-left": 12,
+  "margin-right": 12,
+  "modules-left": [
+    "custom/spotlight",
+    "hyprland/workspaces",
+    "hyprland/window"
+  ],
+  "modules-center": [
+    "clock"
+  ],
+  "modules-right": [
+    "custom/ai",
+    "mpris",
+    "tray",
+    "custom/gaming",
+    "custom/vpn",
+    "network",
+    "pulseaudio",
+    "backlight",
+    "memory",
+    "cpu",
+    "battery",
+    "idle_inhibitor",
+    "custom/settings",
+    "custom/power"
+  ],
+  "custom/spotlight": {
+    "format": " 󰣇 ",
+    "tooltip": "Navuryx Spotlight",
+    "on-click": "~/.config/navuryx/bin/navuryx-spotlight",
+    "on-click-right": "~/.config/navuryx/bin/navuryx-command"
+  },
+  "custom/ai": {
+    "format": "󰚩",
+    "tooltip": "Navuryx AI",
+    "on-click": "~/.config/navuryx/bin/navuryx-ai",
+    "on-click-right": "~/.config/navuryx/bin/navuryx-ask-screen"
+  },
+  "custom/vpn": {
+    "exec": "~/.config/navuryx/bin/navuryx-vpn --waybar",
+    "return-type": "json",
+    "interval": 10,
+    "on-click": "~/.config/navuryx/bin/navuryx-vpn",
+    "on-click-right": "~/.config/navuryx/bin/navuryx-vpn --toggle"
+  },
+  "custom/gaming": {
+    "exec": "~/.config/navuryx/bin/navuryx-gaming --waybar",
+    "return-type": "json",
+    "interval": 15,
+    "on-click": "~/.config/navuryx/bin/navuryx-gaming"
+  },
+  "hyprland/workspaces": {
+    "format": "{id}",
+    "all-outputs": true,
+    "sort-by-number": true,
+    "format-icons": {
+      "active": "",
+      "default": "",
+      "urgent": ""
+    },
+    "persistent-workspaces": {
+      "*": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    "on-scroll-up": "hyprctl dispatch workspace e-1",
+    "on-scroll-down": "hyprctl dispatch workspace e+1"
+  },
+  "hyprland/window": {
+    "format": "{title}",
+    "max-length": 38,
+    "separate-outputs": true
+  },
+  "clock": {
+    "format": "  {:%H:%M}",
+    "format-alt": "  {:%A, %d %B %Y}",
+    "tooltip-format": "<tt><small>{calendar}</small></tt>"
+  },
+  "network": {
+    "format-wifi": "  {signalStrength}%",
+    "format-ethernet": "󰈀",
+    "format-disconnected": "󰖪",
+    "on-click": "nm-connection-editor"
+  },
+  "pulseaudio": {
+    "format": "{icon} {volume}%",
+    "format-muted": "󰝟",
+    "format-icons": [
+      "",
+      "",
+      ""
+    ],
+    "on-click": "pavucontrol",
+    "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+  },
+  "backlight": {
+    "format": "󰃠 {percent}%",
+    "on-scroll-up": "~/.config/navuryx/bin/navuryx-osd brightness-up",
+    "on-scroll-down": "~/.config/navuryx/bin/navuryx-osd brightness-down"
+  },
+  "mpris": {
+    "format": "{player_icon} {title}",
+    "format-paused": "󰏤 {title}",
+    "max-length": 28,
+    "player-icons": {
+      "default": "",
+      "spotify": ""
+    },
+    "on-click": "playerctl play-pause",
+    "on-click-right": "playerctl next"
+  },
+  "idle_inhibitor": {
+    "format": "{icon}",
+    "format-icons": {
+      "activated": "󰅶",
+      "deactivated": "󰾪"
+    },
+    "tooltip-format-activated": "Idle inhibitor on",
+    "tooltip-format-deactivated": "Idle inhibitor off"
+  },
+  "memory": {
+    "format": " {percentage}%",
+    "interval": 5,
+    "tooltip-format": "Memory: {used:0.1f} GiB / {total:0.1f} GiB"
+  },
+  "cpu": {
+    "format": " {usage}%",
+    "interval": 5
+  },
+  "battery": {
+    "states": {
+      "warning": 30,
+      "critical": 15
+    },
+    "format": "{icon} {capacity}%",
+    "format-charging": "󰂄 {capacity}%",
+    "format-icons": [
+      "󰁺",
+      "󰁻",
+      "󰁼",
+      "󰁽",
+      "󰁾",
+      "󰁿",
+      "󰂀",
+      "󰂁",
+      "󰂂",
+      "󰁹"
+    ]
+  },
+  "tray": {
+    "spacing": 8
+  },
+  "custom/settings": {
+    "format": "",
+    "tooltip": "Navuryx settings",
+    "on-click": "~/.config/navuryx/bin/navuryx-settings",
+    "on-click-right": "~/.config/navuryx/bin/navuryx-welcome --force"
+  },
+  "custom/power": {
+    "format": "",
+    "tooltip": "Power menu",
+    "on-click": "~/.config/navuryx/bin/navuryx-power",
+    "on-click-right": "~/.config/navuryx/bin/navuryx-power --rofi"
+  }
+}

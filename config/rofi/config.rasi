@@ -1,0 +1,8 @@
+configuration { modi: "drun,run,window"; show-icons: true; }
+* { bg: #05060Aee; surface: #0A1020; blue: #4169E1; purple: #8B5CF6; text: #F4F7FF; }
+window { width: 640px; border: 2px; border-color: @blue; border-radius: 16px; background-color: @bg; }
+mainbox { padding: 16px; }
+inputbar { padding: 12px; background-color: @surface; border-radius: 12px; }
+listview { lines: 8; spacing: 6px; }
+element { padding: 10px; border-radius: 10px; }
+element selected { background-color: @purple; }

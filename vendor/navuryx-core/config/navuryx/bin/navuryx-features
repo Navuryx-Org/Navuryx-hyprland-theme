@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+REGISTRY="$NAV_CONFIG/features.tsv"
+
+require_registry() {
+  [[ -f "$REGISTRY" ]] || {
+    printf 'Feature registry not found: %s\n' "$REGISTRY" >&2
+    exit 1
+  }
+}
+
+render() {
+  local filter="${1:-all}"
+  awk -F'\t' -v filter="$filter" '
+    NR == 1 { next }
+    NF < 4 { next }
+    filter != "all" && $4 != filter { next }
+    { printf "  %-24s %-52s %-8s %s\n", $1, $2, $3, $4 }
+  ' "$REGISTRY"
+}
+
+counts() {
+  awk -F'\t' '
+    NR == 1 { next }
+    NF < 4 { next }
+    { total++; state[$4]++ }
+    END {
+      printf "  total: %d\n", total
+      for (s in state) printf "  %s: %d\n", s, state[s]
+    }
+  ' "$REGISTRY"
+}
+
+report() {
+  printf 'Navuryx feature registry\n\n'
+  printf 'Implemented\n'
+  render implemented
+  printf '\nDeferred\n'
+  render deferred
+  printf '\nSummary\n'
+  counts
+}
+
+require_registry
+
+case "${1:-}" in
+  --print|--stdout) report ;;
+  --implemented) render implemented ;;
+  --deferred) render deferred ;;
+  --status)
+    [[ -n "${2:-}" ]] || { printf 'Usage: navuryx-features --status ID\n' >&2; exit 2; }
+    awk -F'\t' -v id="$2" 'NR > 1 && $1 == id { print $4; found = 1 } END { exit !found }' "$REGISTRY"
+    ;;
+  *)
+    out="$(mktemp)"
+    report > "$out"
+    if [[ -t 1 ]]; then
+      cat "$out"
+    else
+      open_terminal_file "$out" 'Navuryx features'
+    fi
+    ;;
+esac

@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+STATE="$NAV_DATA/appearance"
+mkdir -p "$STATE" "$NAV_DATA/colors"
+SHELL_CFG="$NAV_CONFIG/bin/navuryx-shell-config"
+
+mode_of() {
+  if [[ -x "$SHELL_CFG" ]]; then
+    "$SHELL_CFG" get appearance_mode auto
+  else
+    printf 'auto'
+  fi
+}
+
+set_mode() {
+  local mode="$1"
+  case "$mode" in
+    auto|dark|light) ;;
+    *) printf 'invalid mode: %s\n' "$mode" >&2; return 2 ;;
+  esac
+  if [[ -x "$SHELL_CFG" ]]; then
+    "$SHELL_CFG" set appearance_mode "$mode"
+  fi
+  printf '%s\n' "$mode" > "$STATE/mode"
+}
+
+hour_now() {
+  date +%H | sed 's/^0//'
+}
+
+resolve_scheme() {
+  local mode portal hour
+  mode="$(mode_of)"
+  case "$mode" in
+    dark) printf 'dark'; return ;;
+    light) printf 'light'; return ;;
+  esac
+  portal="$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null | tr -d "'" || true)"
+  if [[ "$portal" == prefer-light ]]; then
+    printf 'light'
+    return
+  fi
+  if [[ "$portal" == prefer-dark ]]; then
+    printf 'dark'
+    return
+  fi
+  hour="$(hour_now)"
+  if (( hour >= 7 && hour < 19 )); then
+    printf 'dark'
+  else
+    printf 'dark'
+  fi
+}
+
+write_dark_overrides() {
+  local waybar_home="${XDG_CONFIG_HOME:-$HOME/.config}/waybar"
+  mkdir -p "$waybar_home"
+  cat > "$waybar_home/navuryx-appearance.css" <<'EOF'
+@define-color bg rgba(2, 2, 8, 0.94);
+@define-color surface rgba(8, 8, 18, 0.96);
+@define-color surface2 rgba(14, 14, 28, 0.97);
+@define-color text #b8c0e8;
+@define-color muted #5c5c88;
+@define-color blue #3558d4;
+@define-color purple #7a24c9;
+@define-color danger #e04570;
+EOF
+  cat > "${XDG_CONFIG_HOME:-$HOME/.config}/rofi/navuryx-appearance.rasi" <<'EOF'
+* { bg: #020208f5; surface: #080812f5; surface2: #0e0e1cf5; text: #b8c0e8ff; muted: #5c5c88ff; blue: #3558d4ff; purple: #7a24c9ff; danger: #e04570ff; }
+EOF
+  cat > "$NAV_DATA/colors/appearance.env" <<'EOF'
+SCHEME=dark
+ACTIVE_BORDER_A=rgba(3558D4ff)
+ACTIVE_BORDER_B=rgba(7A24C9ff)
+INACTIVE_BORDER=rgba(12122aaa)
+GTK_PREFER_DARK=1
+COLOR_SCHEME=prefer-dark
+EOF
+}
+
+write_light_overrides() {
+  local waybar_home="${XDG_CONFIG_HOME:-$HOME/.config}/waybar"
+  mkdir -p "$waybar_home"
+  cat > "$waybar_home/navuryx-appearance.css" <<'EOF'
+@define-color bg rgba(232, 234, 246, 0.92);
+@define-color surface rgba(244, 245, 252, 0.94);
+@define-color surface2 rgba(255, 255, 255, 0.96);
+@define-color text #1a1a2e;
+@define-color muted #5a5a7a;
+@define-color blue #3558d4;
+@define-color purple #7a24c9;
+@define-color danger #c6284a;
+EOF
+  cat > "${XDG_CONFIG_HOME:-$HOME/.config}/rofi/navuryx-appearance.rasi" <<'EOF'
+* { bg: #e8eaf6f2; surface: #f4f5fcf5; surface2: #fffffff5; text: #1a1a2eff; muted: #5a5a7aff; blue: #3558d4ff; purple: #7a24c9ff; danger: #c6284aff; }
+EOF
+  cat > "$NAV_DATA/colors/appearance.env" <<'EOF'
+SCHEME=light
+ACTIVE_BORDER_A=rgba(3558D4ff)
+ACTIVE_BORDER_B=rgba(7A24C9ff)
+INACTIVE_BORDER=rgba(9AA0C0aa)
+GTK_PREFER_DARK=0
+COLOR_SCHEME=prefer-light
+EOF
+}
+
+apply_portal_gtk_qt() {
+  local scheme="$1"
+  local prefer dark_flag gtk3 gtk4
+  if [[ "$scheme" == light ]]; then
+    prefer=prefer-light
+    dark_flag=0
+  else
+    prefer=prefer-dark
+    dark_flag=1
+  fi
+  gsettings set org.gnome.desktop.interface color-scheme "$prefer" >/dev/null 2>&1 || true
+  gsettings set org.gnome.desktop.interface gtk-theme Adwaita-dark >/dev/null 2>&1 || true
+  if [[ "$scheme" == light ]]; then
+    gsettings set org.gnome.desktop.interface gtk-theme Adwaita >/dev/null 2>&1 || true
+  fi
+  gtk3="${XDG_CONFIG_HOME:-$HOME/.config}/gtk-3.0/settings.ini"
+  gtk4="${XDG_CONFIG_HOME:-$HOME/.config}/gtk-4.0/settings.ini"
+  for f in "$gtk3" "$gtk4"; do
+    if [[ -f "$f" ]]; then
+      if grep -q '^gtk-application-prefer-dark-theme=' "$f"; then
+        sed -i "s/^gtk-application-prefer-dark-theme=.*/gtk-application-prefer-dark-theme=$dark_flag/" "$f"
+      else
+        printf 'gtk-application-prefer-dark-theme=%s\n' "$dark_flag" >> "$f"
+      fi
+    fi
+  done
+  mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/qt6ct" "${XDG_CONFIG_HOME:-$HOME/.config}/kdeglobals" 2>/dev/null || true
+  printf '%s\n' "$scheme" > "$STATE/active-scheme"
+}
+
+apply_hypr_borders() {
+  # shellcheck disable=SC1090
+  source "$NAV_DATA/colors/appearance.env" 2>/dev/null || true
+  if [[ -n "${ACTIVE_BORDER_A:-}" && -n "${ACTIVE_BORDER_B:-}" ]]; then
+    hyprctl keyword general:col.active_border "$ACTIVE_BORDER_A $ACTIVE_BORDER_B 45deg" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${INACTIVE_BORDER:-}" ]]; then
+    hyprctl keyword general:col.inactive_border "$INACTIVE_BORDER" >/dev/null 2>&1 || true
+  fi
+}
+
+prefer_matugen_dark() {
+  local wall colors
+  wall="$(readlink -f "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/current-wallpaper" 2>/dev/null || true)"
+  [[ -f "$wall" ]] || return 0
+  command -v matugen >/dev/null 2>&1 || return 0
+  colors="$NAV_DATA/colors"
+  mkdir -p "$colors"
+  matugen image "$wall" --json hex > "$colors/matugen.json" 2>/dev/null || true
+  if [[ -f "$colors/matugen.json" ]]; then
+    local primary secondary
+    primary="$(jq -r '.colors.dark.primary // .colors.primary // empty' "$colors/matugen.json" 2>/dev/null || true)"
+    secondary="$(jq -r '.colors.dark.secondary // .colors.secondary // empty' "$colors/matugen.json" 2>/dev/null || true)"
+    if [[ -n "$primary" ]]; then
+      printf 'primary=%s\nsecondary=%s\nscheme=dark\n' "$primary" "$secondary" > "$colors/navuryx.env"
+    fi
+  fi
+}
+
+apply_scheme() {
+  local scheme
+  scheme="$(resolve_scheme)"
+  if [[ "$scheme" == light ]]; then
+    write_light_overrides
+  else
+    write_dark_overrides
+    prefer_matugen_dark || true
+  fi
+  apply_portal_gtk_qt "$scheme"
+  apply_hypr_borders
+  if [[ -x "${XDG_CONFIG_HOME:-$HOME/.config}/waybar/launch.sh" ]]; then
+    "${XDG_CONFIG_HOME:-$HOME/.config}/waybar/launch.sh" >/dev/null 2>&1 || true
+  fi
+  pkill -USR2 mako 2>/dev/null || true
+  notify 'Appearance' "Scheme: $scheme (mode: $(mode_of))"
+}
+
+toggle_scheme() {
+  local current
+  current="$(resolve_scheme)"
+  if [[ "$current" == dark ]]; then
+    set_mode light
+  else
+    set_mode dark
+  fi
+  apply_scheme
+}
+
+menu_pick() {
+  local choice
+  choice="$(printf '%s\n' 'Auto (time + portal)' 'Dark' 'Light' 'Toggle dark/light' | menu -p 'Appearance mode')" || exit 0
+  case "$choice" in
+    Auto*) set_mode auto; apply_scheme ;;
+    Dark) set_mode dark; apply_scheme ;;
+    Light) set_mode light; apply_scheme ;;
+    Toggle*) toggle_scheme ;;
+  esac
+}
+
+case "${1:-}" in
+  --apply|apply) apply_scheme ;;
+  --toggle|toggle) toggle_scheme ;;
+  --set)
+    set_mode "${2:?mode}"
+    apply_scheme
+    ;;
+  --mode) mode_of ;;
+  --scheme) resolve_scheme ;;
+  --menu|"") menu_pick ;;
+  *)
+    printf 'usage: navuryx-appearance [--apply|--toggle|--set MODE|--mode|--scheme|--menu]\n' >&2
+    exit 2
+    ;;
+esac

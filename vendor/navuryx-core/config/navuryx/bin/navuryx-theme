@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+THEME_DIR="$NAV_CONFIG/themes"
+mkdir -p "$THEME_DIR"
+
+ensure_builtin_themes() {
+  if [[ ! -f "$THEME_DIR/navuryx-default.env" ]]; then
+    cat > "$THEME_DIR/navuryx-default.env" <<'EOF'
+NAVURYX_THEME=navuryx-default
+ACTIVE_BORDER_A=rgba(4169E1ff)
+ACTIVE_BORDER_B=rgba(8A2BE2ff)
+INACTIVE_BORDER=rgba(24243aaa)
+WAYBAR_ACCENT=#4169e1
+EOF
+  fi
+  if [[ ! -f "$THEME_DIR/midnight-purple.env" ]]; then
+    cat > "$THEME_DIR/midnight-purple.env" <<'EOF'
+NAVURYX_THEME=midnight-purple
+ACTIVE_BORDER_A=rgba(7C3AEDFF)
+ACTIVE_BORDER_B=rgba(A855F7FF)
+INACTIVE_BORDER=rgba(1E1B4AFF)
+WAYBAR_ACCENT=#a855f7
+EOF
+  fi
+  if [[ ! -f "$THEME_DIR/royal-glass.env" ]]; then
+    cat > "$THEME_DIR/royal-glass.env" <<'EOF'
+NAVURYX_THEME=royal-glass
+ACTIVE_BORDER_A=rgba(38BDF8FF)
+ACTIVE_BORDER_B=rgba(6366F1FF)
+INACTIVE_BORDER=rgba(0F172AFF)
+WAYBAR_ACCENT=#38bdf8
+EOF
+  fi
+  if [[ ! -f "$THEME_DIR/catppuccin-mocha.env" ]]; then
+    cat > "$THEME_DIR/catppuccin-mocha.env" <<'EOF'
+NAVURYX_THEME=catppuccin-mocha
+ACTIVE_BORDER_A=rgba(89B4FAFF)
+ACTIVE_BORDER_B=rgba(CBA6F7FF)
+INACTIVE_BORDER=rgba(313244FF)
+WAYBAR_ACCENT=#cba6f7
+EOF
+  fi
+  if [[ ! -f "$THEME_DIR/tokyo-night.env" ]]; then
+    cat > "$THEME_DIR/tokyo-night.env" <<'EOF'
+NAVURYX_THEME=tokyo-night
+ACTIVE_BORDER_A=rgba(7AA2F7FF)
+ACTIVE_BORDER_B=rgba(BB9AF7FF)
+INACTIVE_BORDER=rgba(1A1B26FF)
+WAYBAR_ACCENT=#7aa2f7
+EOF
+  fi
+}
+
+apply_theme_env() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  set -a
+  # shellcheck disable=SC1090
+  source "$file"
+  set +a
+  cp -f "$file" "$NAV_DATA/active-theme.env"
+  if [[ -n "${ACTIVE_BORDER_A:-}" && -n "${ACTIVE_BORDER_B:-}" ]]; then
+    hyprctl keyword general:col.active_border "$ACTIVE_BORDER_A $ACTIVE_BORDER_B 45deg" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${INACTIVE_BORDER:-}" ]]; then
+    hyprctl keyword general:col.inactive_border "$INACTIVE_BORDER" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${WAYBAR_ACCENT:-}" ]]; then
+    printf '@define-color accent %s;\n' "$WAYBAR_ACCENT" > "${XDG_CONFIG_HOME:-$HOME/.config}/waybar/navuryx-accent.css"
+    pkill -USR2 waybar 2>/dev/null || true
+    "${XDG_CONFIG_HOME:-$HOME/.config}/waybar/launch.sh" >/dev/null 2>&1 || true
+  fi
+  notify 'Theme' "$(basename "$file" .env)"
+}
+
+ensure_builtin_themes
+
+choice="$(find "$THEME_DIR" -maxdepth 1 -type f -name '*.env' | sed 's|.*/||;s|\.env$||' | sort | menu -p 'Theme packs')" || exit 0
+[[ -n "$choice" ]] || exit 0
+apply_theme_env "$THEME_DIR/$choice.env"

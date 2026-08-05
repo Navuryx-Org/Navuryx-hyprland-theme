@@ -1,0 +1,4 @@
+* { font-family: sans-serif; font-size: 13px; }
+window#waybar { background: rgba(5,6,10,.94); color: #F4F7FF; border: 1px solid rgba(65,105,225,.55); border-radius: 12px; }
+#workspaces button.active, #custom-navuryx { color: #8B5CF6; }
+#clock,#network,#bluetooth,#pulseaudio,#battery,#tray { padding: 0 9px; }

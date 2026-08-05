@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+SHELL_CFG="$NAV_CONFIG/bin/navuryx-shell-config"
+count="$("$SHELL_CFG" get persistent_workspaces 10 2>/dev/null || printf 10)"
+[[ "$count" =~ ^[0-9]+$ ]] || count=10
+(( count < 5 )) && count=10
+
+active="$(hyprctl -j activeworkspace 2>/dev/null | jq -r '.id // 1' 2>/dev/null || printf 1)"
+clients_json="$(hyprctl -j clients 2>/dev/null || printf '[]')"
+
+lines=()
+for ((i = 1; i <= count; i++)); do
+  n="$(printf '%s' "$clients_json" | jq -r --argjson id "$i" '[.[] | select(.workspace.id == $id)] | length' 2>/dev/null || printf 0)"
+  mark=""
+  if [[ "$i" == "$active" ]]; then
+    mark=" *"
+  fi
+  lines+=("Desktop $i$mark  ($n windows)")
+done
+
+lines+=("---")
+mapfile -t wins < <(printf '%s' "$clients_json" | jq -r '.[] | "W\(.workspace.id)  \(.class)  \(.title)  \(.address)"' 2>/dev/null || true)
+if ((${#wins[@]})); then
+  lines+=("${wins[@]}")
+fi
+
+choice="$(printf '%s\n' "${lines[@]}" | menu -p 'Workspace overview')" || exit 0
+[[ -n "$choice" ]] || exit 0
+
+if [[ "$choice" == Desktop* ]]; then
+  id="$(printf '%s' "$choice" | sed -n 's/^Desktop \([0-9][0-9]*\).*/\1/p')"
+  [[ -n "$id" ]] || exit 0
+  hyprctl dispatch workspace "$id" >/dev/null
+  exit 0
+fi
+
+if [[ "$choice" == W* ]]; then
+  addr="$(printf '%s' "$choice" | awk '{print $NF}')"
+  [[ -n "$addr" ]] || exit 0
+  hyprctl dispatch focuswindow "address:$addr" >/dev/null
+fi

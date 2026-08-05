@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+CONF="$NAV_CONFIG/shell.conf"
+DEFAULT_CONF="$NAV_CONFIG/shell.conf"
+
+ensure_conf() {
+  if [[ ! -f "$CONF" ]]; then
+    mkdir -p "$(dirname "$CONF")"
+    cat > "$CONF" <<'EOF'
+appearance_mode=auto
+waybar_position=top
+waybar_visible=1
+gaps_in=6
+gaps_out=14
+border_size=2
+persistent_workspaces=10
+rounding=14
+blur_enabled=1
+welcome_shown=0
+kb_layout=us
+repeat_rate=35
+repeat_delay=280
+natural_scroll=0
+touchpad_natural_scroll=1
+sensitivity=0
+accel_profile=flat
+EOF
+  fi
+}
+
+get_val() {
+  local key="$1" def="${2:-}"
+  ensure_conf
+  local val
+  val="$(grep -E "^${key}=" "$CONF" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+  if [[ -z "$val" ]]; then
+    printf '%s' "$def"
+  else
+    printf '%s' "$val"
+  fi
+}
+
+set_val() {
+  local key="$1" value="$2"
+  ensure_conf
+  if grep -qE "^${key}=" "$CONF" 2>/dev/null; then
+    local tmp
+    tmp="$(mktemp)"
+    awk -F= -v k="$key" -v v="$value" 'BEGIN{OFS="="} $1==k{$2=v; found=1} {print} END{if(!found) print k OFS v}' "$CONF" > "$tmp"
+    mv "$tmp" "$CONF"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$CONF"
+  fi
+}
+
+apply_gaps() {
+  local gin gout border round blur
+  gin="$(get_val gaps_in 6)"
+  gout="$(get_val gaps_out 14)"
+  border="$(get_val border_size 2)"
+  round="$(get_val rounding 14)"
+  blur="$(get_val blur_enabled 1)"
+  hyprctl keyword general:gaps_in "$gin" >/dev/null 2>&1 || true
+  hyprctl keyword general:gaps_out "$gout" >/dev/null 2>&1 || true
+  hyprctl keyword general:border_size "$border" >/dev/null 2>&1 || true
+  hyprctl keyword decoration:rounding "$round" >/dev/null 2>&1 || true
+  if [[ "$blur" == 1 ]]; then
+    hyprctl keyword decoration:blur:enabled true >/dev/null 2>&1 || true
+  else
+    hyprctl keyword decoration:blur:enabled false >/dev/null 2>&1 || true
+  fi
+}
+
+apply_input() {
+  local layout rate delay natural touchpad sensitivity accel
+  layout="$(get_val kb_layout us)"
+  rate="$(get_val repeat_rate 35)"
+  delay="$(get_val repeat_delay 280)"
+  natural="$(get_val natural_scroll 0)"
+  touchpad="$(get_val touchpad_natural_scroll 1)"
+  sensitivity="$(get_val sensitivity 0)"
+  accel="$(get_val accel_profile flat)"
+  hyprctl keyword input:kb_layout "$layout" >/dev/null 2>&1 || true
+  hyprctl keyword input:repeat_rate "$rate" >/dev/null 2>&1 || true
+  hyprctl keyword input:repeat_delay "$delay" >/dev/null 2>&1 || true
+  hyprctl keyword input:natural_scroll "$natural" >/dev/null 2>&1 || true
+  hyprctl keyword input:touchpad:natural_scroll "$touchpad" >/dev/null 2>&1 || true
+  hyprctl keyword input:sensitivity "$sensitivity" >/dev/null 2>&1 || true
+  hyprctl keyword input:accel_profile "$accel" >/dev/null 2>&1 || true
+}
+
+write_waybar_runtime() {
+  local pos visible count cfg style cfg_home runtime
+  pos="$(get_val waybar_position top)"
+  visible="$(get_val waybar_visible 1)"
+  count="$(get_val persistent_workspaces 10)"
+  cfg_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+  runtime="${XDG_RUNTIME_DIR:-/tmp}/navuryx"
+  mkdir -p "$runtime"
+  cfg="$cfg_home/waybar/config.jsonc"
+  style="$cfg_home/waybar/style.css"
+  [[ -f "$cfg" ]] || return 1
+
+  local margin_key="margin-top"
+  local margin_clear=("margin-top" "margin-bottom" "margin-left" "margin-right")
+  case "$pos" in
+    bottom) margin_key="margin-bottom" ;;
+    left) margin_key="margin-left" ;;
+    right) margin_key="margin-right" ;;
+    *) pos="top"; margin_key="margin-top" ;;
+  esac
+
+  local out="$runtime/waybar-config.jsonc"
+  python3 - "$cfg" "$out" "$pos" "$count" "$margin_key" <<'PY' || return 1
+import json, re, sys
+src, dst, pos, count, margin_key = sys.argv[1:6]
+raw = open(src, encoding="utf-8").read()
+raw = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)
+raw = re.sub(r"//.*?$", "", raw, flags=re.M)
+data = json.loads(raw)
+data["position"] = pos
+for k in ("margin-top", "margin-bottom", "margin-left", "margin-right"):
+    data.pop(k, None)
+if pos in ("top", "bottom"):
+    data[margin_key] = 8
+    data["margin-left"] = 12
+    data["margin-right"] = 12
+    data["height"] = 40
+    data.pop("width", None)
+else:
+    data[margin_key] = 8
+    data["margin-top"] = 12
+    data["margin-bottom"] = 12
+    data["width"] = 46
+    data.pop("height", None)
+ws = data.setdefault("hyprland/workspaces", {})
+n = max(5, min(20, int(count)))
+ws["persistent-workspaces"] = {"*": list(range(1, n + 1))}
+ws["all-outputs"] = True
+ws["sort-by-number"] = True
+ws["format"] = "{id}"
+open(dst, "w", encoding="utf-8").write(json.dumps(data, indent=2) + "\n")
+PY
+
+  printf '%s\n' "$out" > "$runtime/waybar-config.path"
+  printf '%s\n' "$style" > "$runtime/waybar-style.path"
+  printf '%s\n' "$visible" > "$runtime/waybar-visible"
+}
+
+start_waybar_direct() {
+  local visible runtime cfg style
+  visible="$(get_val waybar_visible 1)"
+  if [[ "$visible" != 1 ]]; then
+    pkill -x waybar 2>/dev/null || true
+    return 0
+  fi
+  write_waybar_runtime || true
+  runtime="${XDG_RUNTIME_DIR:-/tmp}/navuryx"
+  cfg="${XDG_CONFIG_HOME:-$HOME/.config}/waybar/config.jsonc"
+  style="${XDG_CONFIG_HOME:-$HOME/.config}/waybar/style.css"
+  if [[ -f "$runtime/waybar-config.path" ]]; then
+    cfg="$(cat "$runtime/waybar-config.path")"
+  fi
+  if [[ -f "$runtime/waybar-style.path" ]]; then
+    style="$(cat "$runtime/waybar-style.path")"
+  fi
+  pkill -x waybar 2>/dev/null || true
+  sleep 0.2
+  if [[ -f "$cfg" && -f "$style" ]]; then
+    nohup waybar -c "$cfg" -s "$style" >/dev/null 2>&1 &
+  else
+    nohup waybar >/dev/null 2>&1 &
+  fi
+}
+
+restart_waybar() {
+  start_waybar_direct
+}
+
+apply_all() {
+  apply_gaps
+  apply_input
+  restart_waybar
+  if [[ -x "$NAV_CONFIG/bin/navuryx-appearance" ]]; then
+    "$NAV_CONFIG/bin/navuryx-appearance" --apply >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_workspaces() {
+  command -v hyprctl >/dev/null 2>&1 || return 0
+  local count index
+  count="$(get_val persistent_workspaces 10)"
+  [[ "$count" =~ ^[0-9]+$ ]] || count=10
+  ((count < 1)) && count=10
+  ((count > 20)) && count=20
+  for ((index = 1; index <= count; index++)); do
+    hyprctl keyword workspace "$index, persistent:true" >/dev/null 2>&1 || true
+  done
+}
+
+case "${1:-}" in
+  get)
+    get_val "${2:?key}" "${3:-}"
+    ;;
+  set)
+    set_val "${2:?key}" "${3:?value}"
+    ;;
+  apply)
+    apply_all
+    ;;
+  apply-gaps)
+    apply_gaps
+    ;;
+  apply-input)
+    apply_input
+    ;;
+  write-waybar)
+    write_waybar_runtime
+    ;;
+  restart-waybar)
+    restart_waybar
+    ;;
+  ensure-workspaces)
+    ensure_workspaces
+    ;;
+  path)
+    printf '%s\n' "$CONF"
+    ;;
+  *)
+    printf 'usage: navuryx-shell-config get|set|apply|apply-gaps|apply-input|write-waybar|restart-waybar|ensure-workspaces|path\n' >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+THEME="$CONFIG_HOME/rofi/navuryx.rasi"
+NAV_BIN="$CONFIG_HOME/navuryx/bin"
+
+if ! command -v rofi >/dev/null 2>&1; then
+  notify-send -a Navuryx 'Spotlight' 'rofi is not installed. Run: sudo pacman -S rofi-wayland'
+  exit 1
+fi
+
+if pgrep -x rofi >/dev/null 2>&1; then
+  pkill -x rofi || true
+  exit 0
+fi
+
+mode="${1:-combi}"
+case "$mode" in
+  --calc|calc)
+    expression="$(rofi -dmenu -i -p 'Calculate' -theme "$THEME" </dev/null)" || exit 0
+    if command -v qalc >/dev/null 2>&1; then
+      result="$(qalc -t "$expression" 2>&1)"
+    else
+      result='Install qalc to enable calculations.'
+    fi
+    printf '%s' "$result" | wl-copy
+    notify-send -a Navuryx 'Calculator' "$result (copied)"
+    exit 0
+    ;;
+  --web|web)
+    query="$(rofi -dmenu -i -p 'Web search' -theme "$THEME" </dev/null)" || exit 0
+    xdg-open "https://duckduckgo.com/?q=$(printf '%s' "$query" | jq -sRr @uri)"
+    exit 0
+    ;;
+  --emoji|emoji)
+    if [[ -x "$NAV_BIN/navuryx-command" ]]; then
+      "$NAV_BIN/navuryx-command"
+    fi
+    exit 0
+    ;;
+  --clip|clip)
+    [[ -x "$NAV_BIN/navuryx-clipboard" ]] && exec "$NAV_BIN/navuryx-clipboard"
+    exit 0
+    ;;
+esac
+
+exec rofi \
+  -show combi \
+  -modes 'combi,drun,run,window,filebrowser' \
+  -combi-modes 'drun,run,window' \
+  -show-icons \
+  -replace \
+  -theme "$THEME" \
+  -display-combi 'Navuryx'

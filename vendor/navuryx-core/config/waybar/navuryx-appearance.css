@@ -1,0 +1,8 @@
+@define-color bg rgba(2, 2, 8, 0.94);
+@define-color surface rgba(8, 8, 18, 0.96);
+@define-color surface2 rgba(14, 14, 28, 0.97);
+@define-color text #b8c0e8;
+@define-color muted #5c5c88;
+@define-color blue #3558d4;
+@define-color purple #7a24c9;
+@define-color danger #e04570;

@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+BACKUP_ROOT="$NAV_DATA/backups"
+SNAPSHOT_ROOT="$NAV_DATA/snapshots"
+ITEMS_FILE="$NAV_DATA/installed-items"
+
+default_items() {
+  if [[ -f "$ITEMS_FILE" ]]; then
+    cat "$ITEMS_FILE"
+  else
+    printf '%s\n' hypr waybar rofi kitty mako wlogout navuryx fastfetch gtk-3.0 gtk-4.0 quickshell
+  fi
+}
+
+create_snapshot() {
+  local stamp target item
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  target="$SNAPSHOT_ROOT/$stamp"
+  mkdir -p "$target/config"
+  : > "$target/manifest"
+  while IFS= read -r item; do
+    [[ -z "$item" ]] && continue
+    if [[ -e "$CONFIG_HOME/$item" ]]; then
+      cp -a "$CONFIG_HOME/$item" "$target/config/$item"
+      printf '%s|1\n' "$item" >> "$target/manifest"
+    else
+      printf '%s|0\n' "$item" >> "$target/manifest"
+    fi
+  done < <(default_items)
+  printf '%s\n' "$target"
+}
+
+list_backups() {
+  local dir
+  for dir in "$BACKUP_ROOT"/* "$SNAPSHOT_ROOT"/*; do
+    [[ -d "$dir" && -f "$dir/manifest" ]] || continue
+    printf '%s\n' "$dir"
+  done
+}
+
+restore_backup() {
+  local backup="$1" item existed
+  [[ -f "$backup/manifest" ]] || { notify 'Backup' 'Invalid backup folder'; return 1; }
+  while IFS='|' read -r item existed; do
+    [[ -z "$item" ]] && continue
+    [[ "$existed" == 1 ]] || continue
+    [[ -e "$backup/config/$item" ]] || continue
+    rm -rf "${CONFIG_HOME:?}/$item"
+    cp -a "$backup/config/$item" "$CONFIG_HOME/$item"
+  done < "$backup/manifest"
+  notify 'Backup' "Restored $(basename "$backup"). Log out and back in."
+}
+
+case "${1:-}" in
+  --create)
+    path="$(create_snapshot)"
+    notify 'Backup' "Snapshot saved: $path"
+    printf '%s\n' "$path"
+    exit 0
+    ;;
+  --list)
+    list_backups
+    exit 0
+    ;;
+  --restore)
+    [[ -n "${2:-}" ]] || { printf 'Usage: navuryx-backup --restore PATH\n' >&2; exit 2; }
+    restore_backup "$2"
+    exit 0
+    ;;
+esac
+
+choice="$(printf '%s\n' \
+  'Create snapshot of current config' \
+  'Restore a snapshot or install backup' \
+  'Show last install backup' \
+  'Open backup folder' \
+  'Uninstall Navuryx' | menu -p 'Backup and restore')" || exit 0
+
+case "$choice" in
+  Create*)
+    path="$(create_snapshot)"
+    notify 'Backup' "Snapshot saved: $path"
+    ;;
+  Restore*)
+    selection="$(list_backups | menu -p 'Restore which backup')" || exit 0
+    [[ -n "$selection" ]] || exit 0
+    restore_backup "$selection"
+    ;;
+  Show*)
+    if [[ -f "$NAV_DATA/last-backup" ]]; then
+      notify 'Backup' "$(cat "$NAV_DATA/last-backup")"
+    else
+      notify 'Backup' 'No install backup recorded'
+    fi
+    ;;
+  Open*)
+    mkdir -p "$BACKUP_ROOT"
+    if command -v dolphin >/dev/null 2>&1; then
+      nohup dolphin "$BACKUP_ROOT" >/dev/null 2>&1 &
+    elif command -v thunar >/dev/null 2>&1; then
+      nohup thunar "$BACKUP_ROOT" >/dev/null 2>&1 &
+    else
+      notify 'Backup' "$BACKUP_ROOT"
+    fi
+    ;;
+  Uninstall*)
+    if command -v kitty >/dev/null 2>&1; then
+      kitty -e "$NAV_CONFIG/bin/navuryx-uninstall" --restore
+    else
+      "$NAV_CONFIG/bin/navuryx-uninstall" --restore
+    fi
+    ;;
+esac

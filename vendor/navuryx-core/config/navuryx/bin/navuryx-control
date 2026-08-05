@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+wifi_label() {
+  if command -v nmcli >/dev/null 2>&1; then
+    nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device | awk -F: '$2=="wifi"{print $3" "$4; exit}'
+  else
+    printf 'n/a'
+  fi
+}
+
+bt_label() {
+  if command -v bluetoothctl >/dev/null 2>&1; then
+    bluetoothctl show 2>/dev/null | awk -F': ' '/Powered/{print $2; exit}'
+  else
+    printf 'n/a'
+  fi
+}
+
+vol_label() {
+  if command -v wpctl >/dev/null 2>&1; then
+    wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{print $2}'
+  else
+    printf 'n/a'
+  fi
+}
+
+vpn_label() {
+  if [[ -x "$NAV_CONFIG/bin/navuryx-vpn" ]]; then
+    "$NAV_CONFIG/bin/navuryx-vpn" --status
+  else
+    printf 'n/a'
+  fi
+}
+
+choice="$(printf '%s\n' \
+  "Wi-Fi ($(wifi_label))" \
+  "VPN ($(vpn_label))" \
+  "Bluetooth ($(bt_label))" \
+  "Volume ($(vol_label))" \
+  'Brightness up' \
+  'Brightness down' \
+  'Idle inhibitor toggle' \
+  'Night light (hyprsunset)' \
+  'Gaming mode toggle' \
+  'Gaming profile' \
+  'Battery profile' \
+  'Default profile' \
+  'Notifications' \
+  'Wallpaper' \
+  'Theme packs' \
+  'Settings' \
+  'Power' | menu -p 'Control center')" || exit 0
+
+case "$choice" in
+  VPN*) "$NAV_CONFIG/bin/navuryx-vpn" ;;
+  Wi-Fi*)
+    if command -v nm-connection-editor >/dev/null 2>&1; then
+      nm-connection-editor &
+    else
+      notify 'Control' 'Install NetworkManager applet tools'
+    fi
+    ;;
+  Bluetooth*)
+    if command -v blueman-manager >/dev/null 2>&1; then
+      blueman-manager &
+    elif command -v blueberry >/dev/null 2>&1; then
+      blueberry &
+    else
+      notify 'Control' 'Install blueman for Bluetooth UI'
+    fi
+    ;;
+  Volume*)
+    if command -v pavucontrol >/dev/null 2>&1; then
+      pavucontrol &
+    else
+      "$NAV_CONFIG/bin/navuryx-osd" mute
+    fi
+    ;;
+  'Brightness up') "$NAV_CONFIG/bin/navuryx-osd" brightness-up ;;
+  'Brightness down') "$NAV_CONFIG/bin/navuryx-osd" brightness-down ;;
+  Idle*)
+    if pgrep -x hypridle >/dev/null 2>&1; then
+      pkill -x hypridle || true
+      notify 'Control' 'Idle inhibitor on (hypridle stopped)'
+    else
+      nohup hypridle >/dev/null 2>&1 &
+      notify 'Control' 'Idle inhibitor off (hypridle started)'
+    fi
+    ;;
+  Night*)
+    if command -v hyprsunset >/dev/null 2>&1; then
+      if pgrep -x hyprsunset >/dev/null 2>&1; then
+        pkill -x hyprsunset || true
+        notify 'Control' 'Night light off'
+      else
+        nohup hyprsunset >/dev/null 2>&1 &
+        notify 'Control' 'Night light on'
+      fi
+    else
+      notify 'Control' 'Install hyprsunset for night light'
+    fi
+    ;;
+  'Gaming mode toggle') "$NAV_CONFIG/bin/navuryx-gaming" ;;
+  Gaming*) "$NAV_CONFIG/bin/navuryx-settings" --profile gaming ;;
+  Battery*) "$NAV_CONFIG/bin/navuryx-settings" --profile battery ;;
+  Default*) "$NAV_CONFIG/bin/navuryx-settings" --profile default ;;
+  Notifications*) "$NAV_CONFIG/bin/navuryx-notifications" ;;
+  Wallpaper*) "$NAV_CONFIG/bin/navuryx-wallpaper" ;;
+  Theme*) "$NAV_CONFIG/bin/navuryx-theme" ;;
+  Settings*) "$NAV_CONFIG/bin/navuryx-settings" ;;
+  Power*) "$NAV_CONFIG/bin/navuryx-power" ;;
+esac

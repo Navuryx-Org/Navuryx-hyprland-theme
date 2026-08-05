@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
+STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}
+NAV_STATE="$STATE_HOME/navuryx"
+PROFILE_FILE="$NAV_STATE/profile"
+mkdir -p "$NAV_STATE"
+
+profile(){ [[ -f $PROFILE_FILE ]] && cat "$PROFILE_FILE" || echo full; }
+ipc(){ command -v qs >/dev/null 2>&1 && qs ipc call navuryx toggle "$1" >/dev/null 2>&1; }
+waybar_fallback(){ pkill -x waybar 2>/dev/null || true; exec waybar -c "$CONFIG_HOME/waybar/config.jsonc" -s "$CONFIG_HOME/waybar/style.css"; }
+start_shell(){
+  local mode=${1:-$(profile)}
+  case "$mode" in
+    full|lite|navuryx)
+      if command -v qs >/dev/null 2>&1 && [[ -d $CONFIG_HOME/quickshell/navuryx ]]; then exec qs -c navuryx; fi ;;
+    recovery|waybar) waybar_fallback ;;
+    *) echo "Unknown Navuryx mode: $mode" >&2; return 2 ;;
+  esac
+  command -v waybar >/dev/null 2>&1 && waybar_fallback
+  echo 'No usable Navuryx shell was found. Run: navuryx doctor' >&2
+  exit 1
+}
+set_profile(){
+  local mode=${1:-}
+  case "$mode" in full|lite|recovery|waybar|navuryx) ;; *) echo 'Profile must be full, lite, or recovery.' >&2; return 2;; esac
+  [[ $mode == waybar ]] && mode=recovery
+  [[ $mode == navuryx ]] && mode=full
+  printf '%s\n' "$mode" > "$PROFILE_FILE"
+  echo "Navuryx profile changed to $mode. Restart the shell or log out and back in."
+}
+
+cmd=${1:-help}; shift || true
+case "$cmd" in
+  shell) [[ ${1:-} == --fallback ]] && waybar_fallback; start_shell "${1:-$(profile)}" ;;
+  restart) pkill -x qs 2>/dev/null || true; pkill -x waybar 2>/dev/null || true; start_shell ;;
+  profile)
+    case "${1:-show}" in show) profile;; list) printf '%s\n' full lite recovery;; set) set_profile "${2:-}";; *) set_profile "$1";; esac ;;
+  spotlight) ipc spotlight || { command -v rofi >/dev/null && exec rofi -show drun; } ;;
+  start|start-menu) ipc start || { command -v rofi >/dev/null && exec rofi -show drun; } ;;
+  ai)
+    [[ -f $CONFIG_HOME/navuryx/ai.env ]] && set -a && source "$CONFIG_HOME/navuryx/ai.env" && set +a
+    if [[ ${1:-} == --prompt ]]; then
+      prompt=${2:-}; [[ -n $prompt ]] || { echo 'Missing prompt.' >&2; exit 2; }
+      command -v ollama >/dev/null || { echo 'Ollama is not installed.' >&2; exit 1; }
+      exec ollama run "${NAVURYX_OLLAMA_MODEL:-llama3.2}" "$prompt"
+    fi
+    ipc ai || echo 'Open the Navuryx AI panel, or use: navuryx ai --prompt "question".' ;;
+  overview) ipc overview || { command -v hyprctl >/dev/null && hyprctl dispatch overview:toggle 2>/dev/null || true; } ;;
+  task-view) ipc taskview || true ;;
+  control-center) ipc control || true ;;
+  notifications) ipc notifications || true ;;
+  settings) ipc settings || { command -v nwg-look >/dev/null && exec nwg-look; } ;;
+  clipboard) command -v cliphist >/dev/null && command -v rofi >/dev/null && cliphist list | rofi -dmenu | cliphist decode | wl-copy || ipc left || true ;;
+  sidebar) ipc "${1:-left}" || true ;;
+  capture)
+    mode=${1:-area}
+    if command -v grimblast >/dev/null; then exec grimblast copy "$mode"; fi
+    command -v grim >/dev/null && command -v slurp >/dev/null && command -v wl-copy >/dev/null || { echo 'Install grim, slurp and wl-clipboard.' >&2; exit 1; }
+    grim -g "$(slurp)" - | wl-copy ;;
+  record)
+    command -v wf-recorder >/dev/null && command -v slurp >/dev/null || { echo 'Install wf-recorder and slurp.' >&2; exit 1; }
+    mkdir -p "$HOME/Videos"; exec wf-recorder -g "$(slurp)" -f "$HOME/Videos/navuryx-$(date +%Y%m%d-%H%M%S).mp4" ;;
+  wallpaper)
+    if [[ ${1:-} == restore && -f $NAV_STATE/wallpaper ]]; then command -v swww >/dev/null && exec swww img "$(cat "$NAV_STATE/wallpaper")"; fi
+    command -v swww >/dev/null && command -v rofi >/dev/null || { echo 'Install swww and rofi.' >&2; exit 1; }
+    choice=$(find "$HOME/Pictures" -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) 2>/dev/null | rofi -dmenu -p Wallpaper)
+    [[ -n $choice ]] && printf '%s\n' "$choice" | tee "$NAV_STATE/wallpaper" >/dev/null && swww img "$choice" ;;
+  theme) echo "Navuryx theme configuration: $CONFIG_HOME/navuryx/theme.json" ;;
+  vpn) command -v nmcli >/dev/null && nmcli connection show --active || echo 'NetworkManager CLI is unavailable.' ;;
+  gaming) command -v gamemoded >/dev/null && echo 'Navuryx gaming mode is available.' || echo 'Install GameMode for performance profiles.' ;;
+  lock) command -v hyprlock >/dev/null && exec hyprlock; command -v loginctl >/dev/null && exec loginctl lock-session ;;
+  power) command -v wlogout >/dev/null && exec wlogout; printf 'Lock\nLogout\nReboot\nShutdown\n' | rofi -dmenu -p Power ;;
+  packages|apps)
+    echo 'Navuryx install options:'
+    [[ -f $NAV_STATE/install-options.env ]] && sed 's/^/  /' "$NAV_STATE/install-options.env" || echo '  No install-options file.'
+    echo; echo 'Packages recorded as newly installed by Navuryx:'
+    [[ -f $NAV_STATE/installed-packages.tsv ]] && column -t -s $'\t' "$NAV_STATE/installed-packages.tsv" 2>/dev/null || echo '  None recorded.' ;;
+  components) [[ -f $NAV_STATE/components.tsv ]] && cat "$NAV_STATE/components.tsv" || echo 'Navuryx components are not registered.' ;;
+  backup) echo "Backups: $NAV_STATE/backups" ;;
+  restore) echo 'Run from the repository: ./uninstall.sh --restore-latest' ;;
+  doctor) [[ -x $CONFIG_HOME/navuryx/scripts/navuryx-doctor ]] && exec "$CONFIG_HOME/navuryx/scripts/navuryx-doctor"; echo 'Navuryx doctor is not installed.' >&2; exit 1 ;;
+  help|*) cat <<'HELP'
+Navuryx command
+
+  navuryx shell [full|lite|recovery]
+  navuryx profile show|list|set NAME
+  navuryx spotlight | start | ai [--prompt TEXT] | overview | task-view
+  navuryx sidebar left|right | control-center | notifications | settings
+  navuryx capture | record | wallpaper | theme | vpn | gaming | lock | power
+  navuryx packages | components | backup | restore | doctor
+HELP
+  ;;
+esac

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+env_file="$NAV_CONFIG/ai.env"
+[[ -f "$env_file" ]] || { cp "$NAV_CONFIG/ai.env.example" "$env_file"; chmod 600 "$env_file"; }
+# shellcheck disable=SC1090
+source "$env_file"
+[[ "${NAVURYX_AI_PROVIDER:-ollama}" == ollama ]] || { notify 'Navuryx AI' 'Screen questions currently require the Ollama provider.'; exit 1; }
+region="$(slurp)" || exit 0
+image="$(mktemp --suffix=.png)"
+trap 'rm -f "$image"' EXIT
+grim -g "$region" "$image"
+prompt="$(printf 'Explain what is shown and help me with it.' | menu -p 'Ask about screen')" || exit 0
+base="${NAVURYX_OLLAMA_URL:-http://127.0.0.1:11434}"
+model="${NAVURYX_VISION_MODEL:-gemma3:4b}"
+encoded="$(base64 -w0 "$image")"
+payload="$(jq -n --arg model "$model" --arg prompt "$prompt" --arg image "$encoded" '{model:$model,prompt:$prompt,images:[$image],stream:false}')"
+notify 'Navuryx AI' 'Analyzing the selected region…'
+response="$(curl -fsS "$base/api/generate" -H 'Content-Type: application/json' -d "$payload")"
+answer="$(jq -r '.response // .error // "No response"' <<<"$response")"
+out="$NAV_DATA/ai-history/screen-$(date +%Y%m%d-%H%M%S).txt"
+mkdir -p "$(dirname "$out")"
+printf '%s\n' "$answer" > "$out"
+printf '%s' "$answer" | wl-copy
+open_terminal_file "$out" 'Navuryx AI Screen — answer copied'

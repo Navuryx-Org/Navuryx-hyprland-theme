@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+selection="$(cliphist list | rofi -dmenu -i -theme "${XDG_CONFIG_HOME:-$HOME/.config}/rofi/navuryx.rasi" -p 'Clipboard')" || exit 0
+[[ -n "$selection" ]] && printf '%s' "$selection" | cliphist decode | wl-copy

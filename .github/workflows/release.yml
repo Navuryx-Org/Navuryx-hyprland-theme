@@ -1,0 +1,33 @@
+name: Build Navuryx release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version
+        required: true
+        default: 6.2.0
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y rsync zip
+      - name: Build Navuryx package
+        env:
+          NAVURYX_VERSION: ${{ inputs.version || github.ref_name }}
+        run: |
+          VERSION="${NAVURYX_VERSION#v}"
+          ./scripts/build-release.sh --version "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: navuryx-hyprland-release
+          path: dist/*
+      - name: Publish tagged release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

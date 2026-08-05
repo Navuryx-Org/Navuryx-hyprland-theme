@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+dir="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+mkdir -p "$dir"
+file="$dir/navuryx-$(date +%Y%m%d-%H%M%S).png"
+mode="${1:-region}"
+
+case "$mode" in
+  --menu|menu)
+    choice="$(printf '%s\n' 'Region' 'Fullscreen' 'Region + annotate' 'Region + OCR' 'Fullscreen + OCR' | menu -p 'Screenshot')" || exit 0
+    case "$choice" in
+      Region) mode=region ;;
+      Fullscreen) mode=full ;;
+      *annotate*) mode=annotate ;;
+      *Region\ +OCR*|*'Region + OCR'*) mode=ocr ;;
+      *Fullscreen*) mode=full-ocr ;;
+      *) mode=region ;;
+    esac
+    ;;
+esac
+
+grab_region() {
+  local region
+  region="$(slurp)" || exit 0
+  grim -g "$region" "$file"
+}
+
+grab_full() {
+  grim "$file"
+}
+
+annotate() {
+  if command -v satty >/dev/null 2>&1; then
+    satty -f "$file" -o "$file" >/dev/null 2>&1 || true
+  elif command -v swappy >/dev/null 2>&1; then
+    swappy -f "$file" -o "$file" >/dev/null 2>&1 || true
+  else
+    notify 'Screenshot' 'Install satty or swappy for annotation'
+  fi
+}
+
+ocr_file() {
+  if ! command -v tesseract >/dev/null 2>&1; then
+    notify 'OCR' 'Install tesseract for text extraction'
+    return 1
+  fi
+  local text
+  text="$(tesseract "$file" stdout 2>/dev/null || true)"
+  if [[ -n "${text//[[:space:]]/}" ]]; then
+    printf '%s' "$text" | wl-copy
+    notify 'OCR' 'Text copied to clipboard'
+  else
+    notify 'OCR' 'No text detected'
+  fi
+}
+
+case "$mode" in
+  full) grab_full ;;
+  annotate) grab_region; annotate ;;
+  ocr) grab_region; ocr_file; wl-copy < "$file" 2>/dev/null || true; notify 'Screenshot' "$file"; exit 0 ;;
+  full-ocr) grab_full; ocr_file; wl-copy < "$file" 2>/dev/null || true; notify 'Screenshot' "$file"; exit 0 ;;
+  *) grab_region ;;
+esac
+
+wl-copy < "$file"
+notify 'Screenshot saved and copied' "$file"

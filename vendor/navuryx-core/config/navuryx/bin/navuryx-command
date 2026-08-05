@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+choice="$(printf '%s\n' \
+  'AI assistant' \
+  'Spotlight' \
+  'Files' \
+  'Windows' \
+  'Clipboard' \
+  'Calculator' \
+  'Web search' \
+  'Wallpaper' \
+  'Spotify' \
+  'Screenshot' \
+  'Screen recording' \
+  'VPN' \
+  'Gaming mode' \
+  'Keybindings' \
+  'Doctor' \
+  'Features' \
+  'Backups' \
+  'Settings' \
+  'Lock' \
+  'Power' | menu -p 'Command')" || exit 0
+case "$choice" in
+  'AI assistant') "$NAV_CONFIG/bin/navuryx-ai" ;;
+  Spotlight) "$NAV_CONFIG/bin/navuryx-spotlight" ;;
+  Files) rofi -show filebrowser -theme "$ROFI_THEME" ;;
+  Windows) rofi -show window -theme "$ROFI_THEME" ;;
+  Clipboard) "$NAV_CONFIG/bin/navuryx-clipboard" ;;
+  Calculator)
+    expression="$(printf '' | menu -p 'Calculate')" || exit 0
+    if command -v qalc >/dev/null; then result="$(qalc -t "$expression" 2>&1)"; else result='Install qalc/libqalculate to enable calculations.'; fi
+    printf '%s' "$result" | wl-copy
+    notify 'Calculator' "$result (copied)"
+    ;;
+  'Web search')
+    query="$(printf '' | menu -p 'Web search')" || exit 0
+    xdg-open "https://duckduckgo.com/?q=$(printf '%s' "$query" | jq -sRr @uri)"
+    ;;
+  Wallpaper) "$NAV_CONFIG/bin/navuryx-wallpaper" ;;
+  Spotify) "$NAV_CONFIG/bin/navuryx-spotify" ;;
+  Screenshot) "$NAV_CONFIG/bin/navuryx-screenshot" ;;
+  'Screen recording') "$NAV_CONFIG/bin/navuryx-record" ;;
+  VPN) "$NAV_CONFIG/bin/navuryx-vpn" ;;
+  'Gaming mode') "$NAV_CONFIG/bin/navuryx-gaming" ;;
+  Keybindings) "$NAV_CONFIG/bin/navuryx-keybinds" ;;
+  Doctor) "$NAV_CONFIG/bin/navuryx-doctor" ;;
+  Features) "$NAV_CONFIG/bin/navuryx-features" ;;
+  Backups) "$NAV_CONFIG/bin/navuryx-backup" ;;
+  Settings) "$NAV_CONFIG/bin/navuryx-settings" ;;
+  Lock) hyprlock ;;
+  Power) "$NAV_CONFIG/bin/navuryx-power" ;;
+esac

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+state="${XDG_RUNTIME_DIR:-/tmp}/navuryx-record.pid"
+if [[ -f "$state" ]] && kill -0 "$(cat "$state")" 2>/dev/null; then
+  kill -INT "$(cat "$state")"; rm -f "$state"; notify-send -a Navuryx 'Recording saved'; exit 0
+fi
+command -v wf-recorder >/dev/null || { notify-send -a Navuryx 'Install wf-recorder to record the screen'; exit 1; }
+choice="$(printf 'Area\nFull screen' | rofi -dmenu -theme "${XDG_CONFIG_HOME:-$HOME/.config}/rofi/navuryx.rasi" -p 'Record')" || exit 0
+dir="$HOME/Videos/Captures"; mkdir -p "$dir"; file="$dir/navuryx-$(date +%Y%m%d-%H%M%S).mp4"
+if [[ "$choice" == Area ]]; then region="$(slurp)" || exit 0; wf-recorder -g "$region" -f "$file" & else wf-recorder -f "$file" & fi
+echo $! > "$state"; notify-send -a Navuryx 'Recording started' 'Press Super+Alt+R to stop.'

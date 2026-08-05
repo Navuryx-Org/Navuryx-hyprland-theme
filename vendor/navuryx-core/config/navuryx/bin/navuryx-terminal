@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+candidates=(
+  'kitty'
+  'kitty -1'
+  'foot'
+  'alacritty'
+  'wezterm'
+  'konsole'
+  'ghostty'
+  'kgx'
+  'xfce4-terminal'
+  'gnome-terminal'
+  'uxterm'
+  'xterm'
+)
+for cmd in "${candidates[@]}"; do
+  bin="${cmd%% *}"
+  if command -v "$bin" >/dev/null 2>&1; then
+    eval "exec $cmd \"\$@\""
+  fi
+done
+notify-send -a Navuryx 'Terminal' 'No terminal found. Install kitty: sudo pacman -S kitty' 2>/dev/null || true
+exit 1

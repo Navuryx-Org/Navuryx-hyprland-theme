@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+WLOGOUT_LAYOUT="${XDG_CONFIG_HOME:-$HOME/.config}/wlogout/layout"
+WLOGOUT_STYLE="${XDG_CONFIG_HOME:-$HOME/.config}/wlogout/style.css"
+
+do_lock() { command -v hyprlock >/dev/null 2>&1 && hyprlock || loginctl lock-session; }
+do_logout() {
+  if command -v hyprctl >/dev/null 2>&1; then
+    hyprctl dispatch exit
+  else
+    loginctl terminate-user "$USER"
+  fi
+}
+do_suspend() {
+  do_lock &
+  sleep 0.4
+  systemctl suspend
+}
+do_hibernate() { systemctl hibernate; }
+do_shutdown() { systemctl poweroff; }
+do_reboot() { systemctl reboot; }
+
+rofi_power() {
+  choice="$(printf '%s\n' \
+    'Lock' \
+    'Logout' \
+    'Suspend' \
+    'Hibernate' \
+    'Reboot' \
+    'Shutdown' | menu -p 'Power')" || exit 0
+  case "$choice" in
+    Lock) do_lock ;;
+    Logout) do_logout ;;
+    Suspend) do_suspend ;;
+    Hibernate) do_hibernate ;;
+    Reboot) do_reboot ;;
+    Shutdown) do_shutdown ;;
+  esac
+}
+
+launch_wlogout() {
+  local cols="${1:-3}"
+  pkill -x wlogout 2>/dev/null || true
+  wlogout \
+    --protocol layer-shell \
+    --layout "$WLOGOUT_LAYOUT" \
+    --css "$WLOGOUT_STYLE" \
+    --buttons-per-row "$cols" \
+    --column-spacing 18 \
+    --row-spacing 18 \
+    --margin-top 220 \
+    --margin-bottom 220 \
+    --margin-left 320 \
+    --margin-right 320
+}
+
+if [[ "${1:-}" == --rofi ]]; then
+  rofi_power
+  exit 0
+fi
+
+if command -v wlogout >/dev/null 2>&1 && [[ -f "$WLOGOUT_LAYOUT" ]]; then
+  launch_wlogout 3 || rofi_power
+else
+  rofi_power
+fi

@@ -1,0 +1,5 @@
+-- Copy this file to user.lua. It loads after all Navuryx modules.
+-- Example monitor override:
+-- hl.monitor({ output = "eDP-1", mode = "preferred", position = "0x0", scale = 1.25 })
+-- Example keyboard layout:
+-- hl.config({ input = { kb_layout = "us" } })

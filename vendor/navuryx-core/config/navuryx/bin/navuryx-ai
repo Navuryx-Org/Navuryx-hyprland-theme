@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+env_file="$NAV_CONFIG/ai.env"
+[[ -f "$env_file" ]] || { cp "$NAV_CONFIG/ai.env.example" "$env_file"; chmod 600 "$env_file"; }
+# shellcheck disable=SC1090
+source "$env_file"
+prompt="$(printf '' | menu -p 'Ask Navuryx AI')" || exit 0
+[[ -n "$prompt" ]] || exit 0
+provider="${NAVURYX_AI_PROVIDER:-ollama}"
+model="${NAVURYX_AI_MODEL:-gemma3:4b}"
+system_prompt="${NAVURYX_AI_SYSTEM:-You are a concise Linux desktop assistant.}"
+history="$NAV_DATA/ai-history"
+mkdir -p "$history"
+out="$history/$(date +%Y%m%d-%H%M%S).txt"
+notify 'Navuryx AI' 'Generating an answer…'
+if [[ "$provider" == ollama ]]; then
+  base="${NAVURYX_OLLAMA_URL:-http://127.0.0.1:11434}"
+  curl -fsS "$base/api/tags" >/dev/null 2>&1 || { notify 'Navuryx AI' 'Ollama is not running. Run navuryx-ai-setup.'; exit 1; }
+  payload="$(jq -n --arg model "$model" --arg prompt "$prompt" --arg system "$system_prompt" '{model:$model,prompt:$prompt,system:$system,stream:false}')"
+  response="$(curl -fsS "$base/api/generate" -H 'Content-Type: application/json' -d "$payload")"
+  answer="$(jq -r '.response // .error // "No response"' <<<"$response")"
+elif [[ "$provider" == openai ]]; then
+  : "${NAVURYX_AI_ENDPOINT:?Set NAVURYX_AI_ENDPOINT in ai.env}"
+  : "${NAVURYX_AI_API_KEY:?Set NAVURYX_AI_API_KEY in ai.env}"
+  payload="$(jq -n --arg model "$model" --arg system "$system_prompt" --arg prompt "$prompt" '{model:$model,messages:[{role:"system",content:$system},{role:"user",content:$prompt}]}')"
+  response="$(curl -fsS "$NAVURYX_AI_ENDPOINT" -H "Authorization: Bearer $NAVURYX_AI_API_KEY" -H 'Content-Type: application/json' -d "$payload")"
+  answer="$(jq -r '.choices[0].message.content // .error.message // "No response"' <<<"$response")"
+else
+  notify 'Navuryx AI' "Unknown provider: $provider"; exit 1
+fi
+printf 'QUESTION\n%s\n\nANSWER\n%s\n' "$prompt" "$answer" > "$out"
+printf '%s' "$answer" | wl-copy
+open_terminal_file "$out" 'Navuryx AI — answer copied to clipboard'

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+kind="${1:-}"
+notify_id=9911
+
+volume_level() {
+  wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2 * 100)}'
+}
+
+volume_muted() {
+  wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -q MUTED
+}
+
+brightness_level() {
+  if command -v brightnessctl >/dev/null 2>&1; then
+    brightnessctl -m | cut -d, -f4 | tr -d '%'
+  else
+    printf '0'
+  fi
+}
+
+bar() {
+  local value="$1" filled empty i
+  filled=$((value / 10))
+  empty=$((10 - filled))
+  printf '['
+  for ((i = 0; i < filled; i++)); do printf '█'; done
+  for ((i = 0; i < empty; i++)); do printf '░'; done
+  printf ']'
+}
+
+case "$kind" in
+  volume-up)
+    wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+
+    ;;
+  volume-down)
+    wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+    ;;
+  mute)
+    wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+    ;;
+  mic-mute)
+    wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle
+    notify-send -a Navuryx -r "$notify_id" -u low 'Microphone' 'Mute toggled'
+    exit 0
+    ;;
+  brightness-up)
+    brightnessctl -e4 -n2 set 5%+
+    ;;
+  brightness-down)
+    brightnessctl -e4 -n2 set 5%-
+    ;;
+  *)
+    printf 'Usage: navuryx-osd volume-up|volume-down|mute|mic-mute|brightness-up|brightness-down\n' >&2
+    exit 2
+    ;;
+esac
+
+case "$kind" in
+  volume-up|volume-down|mute)
+    level="$(volume_level)"
+    if volume_muted; then
+      notify-send -a Navuryx -r "$notify_id" -u low -h "int:value:${level}" 'Volume' "Muted $(bar "$level")"
+    else
+      notify-send -a Navuryx -r "$notify_id" -u low -h "int:value:${level}" 'Volume' "$(bar "$level") ${level}%"
+    fi
+    ;;
+  brightness-up|brightness-down)
+    level="$(brightness_level)"
+    notify-send -a Navuryx -r "$notify_id" -u low -h "int:value:${level}" 'Brightness' "$(bar "$level") ${level}%"
+    ;;
+esac

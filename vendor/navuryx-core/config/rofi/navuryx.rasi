@@ -1,0 +1,13 @@
+* { bg: #020208f5; surface: #080812f5; surface2: #0e0e1cf5; text: #b8c0e8ff; muted: #5c5c88ff; blue: #3558d4ff; purple: #7a24c9ff; danger: #e04570ff; font: "JetBrainsMono Nerd Font 12"; }
+window { width: 680px; border: 2px; border-color: @blue; border-radius: 18px; background-color: @bg; padding: 18px; }
+mainbox { spacing: 14px; }
+inputbar { background-color: @surface; border-radius: 12px; padding: 12px 14px; children: [prompt, entry]; }
+prompt { text-color: @purple; padding: 0 10px 0 0; }
+entry { text-color: @text; placeholder: "Search Navuryx…"; placeholder-color: @muted; }
+message { background-color: @surface; border-radius: 12px; padding: 12px; }
+textbox { text-color: @text; }
+listview { lines: 9; columns: 1; spacing: 6px; scrollbar: false; }
+element { border-radius: 11px; padding: 10px 12px; }
+element selected { background-color: @blue; }
+element-text { text-color: @text; }
+element-icon { size: 28px; margin: 0 12px 0 0; }

@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+run_quiet() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 4 "$@" 2>/dev/null
+  else
+    "$@" 2>/dev/null
+  fi
+}
+
+has() { command -v "$1" >/dev/null 2>&1; }
+
+proton_cli() {
+  if has protonvpn; then
+    printf 'protonvpn'
+  elif has protonvpn-cli; then
+    printf 'protonvpn-cli'
+  else
+    return 1
+  fi
+}
+
+mullvad_state() {
+  has mullvad || return 1
+  run_quiet mullvad status | head -1
+}
+
+proton_state() {
+  local cli
+  cli="$(proton_cli)" || return 1
+  run_quiet "$cli" status | head -3 | tr '\n' ' '
+}
+
+tailscale_state() {
+  has tailscale || return 1
+  run_quiet tailscale status --peers=false | head -1
+}
+
+nm_vpn_name() {
+  has nmcli || return 1
+  nmcli -t -f NAME,TYPE connection show --active 2>/dev/null \
+    | awk -F: '$2 ~ /vpn|wireguard/ { print $1; exit }'
+}
+
+wg_interfaces() {
+  has ip || return 1
+  ip -o link show type wireguard 2>/dev/null | awk -F': ' '{ print $2 }'
+}
+
+active_vpn() {
+  local state name ifaces
+
+  if state="$(mullvad_state)" && [[ "$state" == *Connected* && "$state" != *Disconnected* ]]; then
+    printf 'Mullvad'
+    return 0
+  fi
+
+  if state="$(proton_state)" && [[ "$state" == *[Cc]onnected* && "$state" != *[Dd]isconnected* ]]; then
+    printf 'ProtonVPN'
+    return 0
+  fi
+
+  if name="$(nm_vpn_name)" && [[ -n "$name" ]]; then
+    printf '%s' "$name"
+    return 0
+  fi
+
+  ifaces="$(wg_interfaces || true)"
+  if [[ -n "$ifaces" ]]; then
+    printf 'WireGuard %s' "$(printf '%s' "$ifaces" | head -1)"
+    return 0
+  fi
+
+  if state="$(tailscale_state)" && [[ -n "$state" && "$state" != *stopped* && "$state" != *Stopped* && "$state" != *Logged\ out* ]]; then
+    printf 'Tailscale'
+    return 0
+  fi
+
+  return 1
+}
+
+installed_providers() {
+  local out=()
+  has mullvad && out+=(Mullvad)
+  proton_cli >/dev/null 2>&1 && out+=(ProtonVPN)
+  has protonvpn-app && out+=("ProtonVPN app")
+  has tailscale && out+=(Tailscale)
+  has wg-quick && out+=(WireGuard)
+  has nmcli && out+=(NetworkManager)
+  printf '%s\n' "${out[@]:-}"
+}
+
+connect_any() {
+  if has mullvad; then
+    mullvad connect >/dev/null 2>&1 && { notify 'VPN' 'Mullvad connecting'; return 0; }
+  fi
+  local cli
+  if cli="$(proton_cli)"; then
+    "$cli" connect >/dev/null 2>&1 && { notify 'VPN' 'ProtonVPN connecting'; return 0; }
+  fi
+  if has tailscale; then
+    tailscale up >/dev/null 2>&1 && { notify 'VPN' 'Tailscale up'; return 0; }
+  fi
+  if has nmcli; then
+    local name
+    name="$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2 ~ /vpn|wireguard/ { print $1; exit }')"
+    if [[ -n "$name" ]]; then
+      nmcli connection up "$name" >/dev/null 2>&1 && { notify 'VPN' "Connected: $name"; return 0; }
+    fi
+  fi
+  notify 'VPN' 'No VPN client could connect'
+  return 1
+}
+
+disconnect_all() {
+  local done_any=0 cli name iface
+  if has mullvad && mullvad disconnect >/dev/null 2>&1; then done_any=1; fi
+  if cli="$(proton_cli)" && "$cli" disconnect >/dev/null 2>&1; then done_any=1; fi
+  if has tailscale && tailscale down >/dev/null 2>&1; then done_any=1; fi
+  if has nmcli; then
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      nmcli connection down "$name" >/dev/null 2>&1 && done_any=1
+    done < <(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null | awk -F: '$2 ~ /vpn|wireguard/ { print $1 }')
+  fi
+  if has wg-quick; then
+    while IFS= read -r iface; do
+      [[ -z "$iface" ]] && continue
+      sudo wg-quick down "$iface" >/dev/null 2>&1 && done_any=1
+    done < <(wg_interfaces || true)
+  fi
+  if [[ "$done_any" == 1 ]]; then
+    notify 'VPN' 'Disconnected'
+  else
+    notify 'VPN' 'Nothing to disconnect'
+  fi
+}
+
+open_gui() {
+  if has protonvpn-app; then
+    nohup protonvpn-app >/dev/null 2>&1 &
+    return 0
+  fi
+  if has mullvad-vpn; then
+    nohup mullvad-vpn >/dev/null 2>&1 &
+    return 0
+  fi
+  if has nm-connection-editor; then
+    nohup nm-connection-editor >/dev/null 2>&1 &
+    return 0
+  fi
+  notify 'VPN' 'No VPN GUI installed'
+  return 1
+}
+
+case "${1:-}" in
+  --status)
+    if name="$(active_vpn)"; then
+      printf '%s\n' "$name"
+    else
+      printf 'off\n'
+    fi
+    exit 0
+    ;;
+  --waybar)
+    if name="$(active_vpn)"; then
+      printf '{"text":"󰖂 %s","tooltip":"VPN connected: %s","class":"connected"}\n' "$name" "$name"
+    else
+      printf '{"text":"󰦞","tooltip":"VPN off","class":"disconnected"}\n'
+    fi
+    exit 0
+    ;;
+  --connect) connect_any; exit 0 ;;
+  --disconnect) disconnect_all; exit 0 ;;
+  --toggle)
+    if active_vpn >/dev/null; then
+      disconnect_all
+    else
+      connect_any || true
+    fi
+    exit 0
+    ;;
+esac
+
+status_line="$(active_vpn || printf 'not connected')"
+
+choice="$(printf '%s\n' \
+  "Status ($status_line)" \
+  'Connect' \
+  'Disconnect' \
+  'Toggle' \
+  'Open VPN app' \
+  'NetworkManager connections' \
+  'Installed VPN clients' | menu -p 'Navuryx VPN')" || exit 0
+
+case "$choice" in
+  Status*) notify 'VPN' "$status_line" ;;
+  Connect) connect_any || true ;;
+  Disconnect) disconnect_all ;;
+  Toggle)
+    if active_vpn >/dev/null; then disconnect_all; else connect_any || true; fi
+    ;;
+  Open*) open_gui || true ;;
+  NetworkManager*)
+    if has nm-connection-editor; then
+      nohup nm-connection-editor >/dev/null 2>&1 &
+    else
+      notify 'VPN' 'Install network-manager-applet for the connection editor'
+    fi
+    ;;
+  Installed*)
+    out="$(mktemp)"
+    installed_providers > "$out"
+    open_terminal_file "$out" 'Installed VPN clients'
+    ;;
+esac

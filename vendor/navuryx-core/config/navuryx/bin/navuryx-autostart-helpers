@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if command -v gnome-keyring-daemon >/dev/null 2>&1 && ! pgrep -x gnome-keyring-d >/dev/null 2>&1; then
+  gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 &
+fi
+pgrep -x mako >/dev/null 2>&1 || mako &
+pgrep -x hypridle >/dev/null 2>&1 || hypridle &
+pgrep -f 'nm-applet.*indicator' >/dev/null 2>&1 || nm-applet --indicator &

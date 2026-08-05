@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+launch() {
+  local cmd="$1"
+  shift
+  if command -v "$cmd" >/dev/null 2>&1; then
+    exec "$cmd" "$@"
+  fi
+  return 1
+}
+
+if launch spotify-launcher; then exit 0; fi
+if launch spotify; then exit 0; fi
+if command -v flatpak >/dev/null 2>&1 && flatpak info com.spotify.Client >/dev/null 2>&1; then
+  exec flatpak run com.spotify.Client
+fi
+if command -v snap >/dev/null 2>&1 && snap list spotify >/dev/null 2>&1; then
+  exec snap run spotify
+fi
+
+notify-send -a Navuryx 'Spotify' 'Spotify is not installed. Re-run: ./install.sh --install-deps' 2>/dev/null || true
+printf 'Spotify not found. Install with:\n' >&2
+printf '  sudo pacman -S --needed spotify-launcher\n' >&2
+printf '  or: flatpak install -y flathub com.spotify.Client\n' >&2
+exit 1

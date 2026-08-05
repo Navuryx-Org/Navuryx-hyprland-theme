@@ -1,0 +1,15 @@
+{
+  "name": "Navuryx Default",
+  "background": "#05060A",
+  "surface": "#0A1020",
+  "raised": "#10182B",
+  "royalBlue": "#4169E1",
+  "brightBlue": "#5B7CFF",
+  "purple": "#8B5CF6",
+  "deepPurple": "#5B21B6",
+  "text": "#F4F7FF",
+  "muted": "#AAB4D0",
+  "success": "#42D392",
+  "warning": "#F6C85F",
+  "error": "#FF5C7A"
+}

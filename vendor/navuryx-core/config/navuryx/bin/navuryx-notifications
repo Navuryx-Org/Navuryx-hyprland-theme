@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+if command -v swaync-client >/dev/null 2>&1; then
+  swaync-client -t -sw
+  exit 0
+fi
+
+choice="$(printf '%s\n' \
+  'Show recent (mako history)' \
+  'Dismiss all' \
+  'Do not disturb toggle' \
+  'Restart notification daemon' | menu -p 'Notifications')" || exit 0
+
+case "$choice" in
+  Show*)
+    if command -v makoctl >/dev/null 2>&1; then
+      makoctl history 2>/dev/null | menu -p 'History' >/dev/null || true
+    else
+      notify 'Notifications' 'makoctl history unavailable'
+    fi
+    ;;
+  Dismiss*)
+    if command -v makoctl >/dev/null 2>&1; then
+      makoctl dismiss -a || true
+    else
+      pkill -x mako || true
+      nohup mako >/dev/null 2>&1 &
+    fi
+    ;;
+  'Do not'*)
+    if command -v makoctl >/dev/null 2>&1; then
+      makoctl mode -t dnd 2>/dev/null || makoctl set-mode dnd 2>/dev/null || notify 'Notifications' 'DND toggle unsupported'
+    else
+      notify 'Notifications' 'Install mako with makoctl for DND'
+    fi
+    ;;
+  Restart*)
+    pkill -x mako || true
+    pkill -x swaync || true
+    if command -v swaync >/dev/null 2>&1; then
+      nohup swaync >/dev/null 2>&1 &
+    else
+      nohup mako >/dev/null 2>&1 &
+    fi
+    notify 'Notifications' 'Daemon restarted'
+    ;;
+esac

@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+BIN="$CONFIG_HOME/navuryx/bin"
+HYPR="$CONFIG_HOME/hypr"
+USE_CONF=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --use-conf) USE_CONF=1 ;;
+    --help|-h)
+      printf 'Usage: navuryx-activate [--use-conf]\n'
+      printf '  --use-conf  Park hyprland.lua and force the hyprland.conf entrypoint\n'
+      exit 0
+      ;;
+  esac
+done
+
+mkdir -p "$STATE_HOME/navuryx"
+
+printf '=== Navuryx activate ===\n'
+printf 'Config home: %s\n' "$CONFIG_HOME"
+
+if [[ ! -f "$CONFIG_HOME/navuryx/.navuryx-install" ]]; then
+  printf 'No install marker at %s/navuryx/.navuryx-install\n' "$CONFIG_HOME" >&2
+  printf 'Run ./install.sh from the repo first.\n' >&2
+  exit 1
+fi
+
+printf 'Install marker:\n'
+sed 's/^/  /' "$CONFIG_HOME/navuryx/.navuryx-install"
+printf '\n'
+
+missing=()
+for cmd in waybar hyprpaper rofi kitty mako; do
+  if command -v "$cmd" >/dev/null 2>&1; then
+    printf '  [ ok ]   %s\n' "$cmd"
+  else
+    printf '  [ MISSING ] %s\n' "$cmd"
+    missing+=("$cmd")
+  fi
+done
+
+if ((${#missing[@]})); then
+  printf '\nInstall the missing programs, then re-run this command:\n' >&2
+  printf '  sudo pacman -S --needed %s\n' "${missing[*]}" >&2
+fi
+
+chmod +x "$BIN/"* "$CONFIG_HOME/waybar/launch.sh" 2>/dev/null || true
+
+lua_errors=""
+if [[ -f "$CONFIG_HOME/navuryx/hyprland-config-errors.log" ]]; then
+  lua_errors="$(tr -d '\0' <"$CONFIG_HOME/navuryx/hyprland-config-errors.log" | sed '/^$/d' || true)"
+fi
+
+hypr_errors=""
+if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
+  hypr_errors="$(hyprctl configerrors 2>/dev/null || true)"
+fi
+
+if [[ "$USE_CONF" != 1 ]]; then
+  if [[ -n "$lua_errors" ]] || [[ -n "$hypr_errors" && "$hypr_errors" != *"no errors"* && "$hypr_errors" != "" ]]; then
+    printf '\nLua/config errors detected. Switching to hyprland.conf entrypoint.\n'
+    USE_CONF=1
+  fi
+fi
+
+if [[ "$USE_CONF" == 1 ]]; then
+  if [[ -f "$HYPR/hyprland.lua" ]]; then
+    mv -f "$HYPR/hyprland.lua" "$HYPR/hyprland.lua.disabled"
+    printf 'Parked hyprland.lua -> hyprland.lua.disabled\n'
+  fi
+  if [[ ! -f "$HYPR/hyprland.conf" ]]; then
+    printf 'hyprland.conf is missing; cannot fall back.\n' >&2
+    exit 1
+  fi
+  printf 'Active entrypoint will be hyprland.conf after a FULL logout.\n'
+fi
+
+if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
+  printf '\nReloading Hyprland...\n'
+  hyprctl reload >/dev/null 2>&1 || true
+  errors="$(hyprctl configerrors 2>/dev/null || true)"
+  if [[ -n "$errors" ]]; then
+    printf 'Hyprland config errors:\n%s\n' "$errors"
+  fi
+fi
+
+if [[ -x "$BIN/navuryx-wallpaper" ]]; then
+  printf 'Restoring wallpaper...\n'
+  "$BIN/navuryx-wallpaper" --restore >/dev/null 2>&1 || true
+fi
+
+if [[ -x "$CONFIG_HOME/waybar/launch.sh" ]]; then
+  printf 'Starting Waybar...\n'
+  "$CONFIG_HOME/waybar/launch.sh" || true
+elif command -v waybar >/dev/null 2>&1; then
+  pkill -x waybar 2>/dev/null || true
+  nohup waybar >"$STATE_HOME/navuryx/waybar.log" 2>&1 &
+fi
+
+sleep 0.5
+if pgrep -x waybar >/dev/null 2>&1; then
+  printf 'Waybar is running.\n'
+else
+  printf 'Waybar is NOT running. Log: %s/navuryx/waybar.log\n' "$STATE_HOME" >&2
+  if [[ -f "$STATE_HOME/navuryx/waybar.log" ]]; then
+    tail -n 20 "$STATE_HOME/navuryx/waybar.log" >&2 || true
+  fi
+fi
+
+if [[ -n "$lua_errors" ]]; then
+  printf '\nLua config errors:\n%s\n' "$lua_errors" >&2
+fi
+
+printf '\nTry these now:\n'
+printf '  Super+Enter        terminal\n'
+printf '  Super+Space        Spotlight\n'
+printf '  Super+A            AI\n'
+printf '  Super+,            settings\n'
+printf '  Super+N            control center\n'
+printf '  Super+Tab          workspace overview\n'
+printf '  Super+1-0          workspaces\n'
+printf '  Super+Shift+M      Spotify\n'
+printf '  Super+Shift+Space  command palette (includes Spotify)\n'
+printf '\nIMPORTANT: fully log out of Hyprland and log back in (or reboot).\n'
+if [[ "$USE_CONF" == 1 ]]; then
+  printf 'Conf fallback is armed; logout is required for Hyprland to drop the Lua entrypoint.\n'
+fi
+printf 'Doctor: %s/navuryx-doctor --state\n' "$BIN"
+printf 'Force conf mode: %s/navuryx-activate --use-conf\n' "$BIN"

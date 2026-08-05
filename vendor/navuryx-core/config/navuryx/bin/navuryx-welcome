@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+SHELL_CFG="$NAV_CONFIG/bin/navuryx-shell-config"
+QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/navuryx"
+FORCE=0
+[[ "${1:-}" == --force ]] && FORCE=1
+
+shown="$("$SHELL_CFG" get welcome_shown 0 2>/dev/null || printf 0)"
+if [[ "$FORCE" != 1 && "$shown" == 1 ]]; then
+  exit 0
+fi
+
+launch_qs() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  if command -v qs >/dev/null 2>&1; then
+    qs -p "$file" >/dev/null 2>&1 &
+    disown || true
+    return 0
+  fi
+  if command -v quickshell >/dev/null 2>&1; then
+    quickshell -p "$file" >/dev/null 2>&1 &
+    disown || true
+    return 0
+  fi
+  return 1
+}
+
+if launch_qs "$QS_DIR/welcome.qml"; then
+  exit 0
+fi
+
+notify 'Welcome to Navuryx' 'Hybrid desktop ready. Open settings with Super+, or Super+I.'
+
+choice="$(printf '%s\n' \
+  'Open settings' \
+  'Appearance: Auto / Dark / Light' \
+  'Waybar position' \
+  'Set up local AI' \
+  'Open Spotlight' \
+  'Workspace overview' \
+  'Keybinding cheatsheet' \
+  'Run Navuryx doctor' \
+  'Done' | menu -p 'Navuryx welcome')" || true
+
+case "${choice:-}" in
+  *settings*) "$NAV_CONFIG/bin/navuryx-settings" ;;
+  Appearance*) "$NAV_CONFIG/bin/navuryx-appearance" --menu ;;
+  Waybar*)
+    pos="$(printf '%s\n' top bottom left right | menu -p 'Waybar position')" || true
+    if [[ -n "${pos:-}" ]]; then
+      "$SHELL_CFG" set waybar_position "$pos"
+      "$SHELL_CFG" restart-waybar
+      notify 'Waybar' "Position: $pos"
+    fi
+    ;;
+  *AI*) kitty --class navuryx-ai -e "$NAV_CONFIG/bin/navuryx-ai-setup" ;;
+  *Spotlight*) "$NAV_CONFIG/bin/navuryx-spotlight" ;;
+  *overview*) "$NAV_CONFIG/bin/navuryx-overview" ;;
+  *cheatsheet*) "$NAV_CONFIG/bin/navuryx-keybinds" ;;
+  *doctor*) "$NAV_CONFIG/bin/navuryx-doctor" ;;
+esac
+
+"$SHELL_CFG" set welcome_shown 1

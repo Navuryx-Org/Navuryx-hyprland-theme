@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -uo pipefail
+NAV_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/navuryx"
+ROFI_THEME="${XDG_CONFIG_HOME:-$HOME/.config}/rofi/navuryx.rasi"
+NAV_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/navuryx"
+mkdir -p "$NAV_DATA"
+menu() { rofi -dmenu -i -theme "$ROFI_THEME" "$@"; }
+notify() { notify-send -a Navuryx "$@"; }
+open_terminal_file() {
+  local file="$1" title="${2:-Navuryx}"
+  local term_bin=""
+  for term_bin in kitty foot alacritty wezterm konsole ghostty xterm; do
+    if command -v "$term_bin" >/dev/null 2>&1; then
+      break
+    fi
+    term_bin=""
+  done
+  [[ -n "$term_bin" ]] || { notify 'Navuryx' 'No terminal found. Install kitty.'; return 1; }
+  if [[ "$term_bin" == kitty ]]; then
+    kitty --class navuryx-ai --title "$title" sh -lc 'printf "\033[1;34m%s\033[0m\n\n" "$1"; cat "$2"; printf "\n\nPress Enter to close…"; read -r _' sh "$title" "$file"
+  else
+    "$term_bin" -e sh -lc 'printf "%s\n\n" "$1"; cat "$2"; printf "\n\nPress Enter to close…"; read -r _' sh "$title" "$file"
+  fi
+}

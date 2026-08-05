@@ -1,0 +1,1 @@
+{"layer":"top","position":"top","height":38,"modules-left":["custom/navuryx","hyprland/workspaces"],"modules-center":["hyprland/window"],"modules-right":["network","bluetooth","pulseaudio","battery","clock","tray"],"custom/navuryx":{"format":"N","on-click":"navuryx spotlight"},"clock":{"format":"{:%a %H:%M}"}}

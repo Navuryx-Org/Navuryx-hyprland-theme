@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+USER_OVERRIDES="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/navuryx/user.lua"
+
+curated_sheet() {
+  cat <<'EOF'
+Launch
+  Super + Return / Super + T     Terminal
+  Super + E                      File manager
+  Super + B                      Browser
+  Super + C                      Code editor
+  Super + Space                  Spotlight
+  Super + Shift + Space          Command palette
+  Super + A                      AI assistant
+  Super + Alt + A                Ask about screen region
+
+Windows
+  Super + Q                      Close window
+  Super + F                      Fullscreen
+  Super + D                      Maximize
+  Super + P                      Pin
+  Super + Alt + Space            Toggle floating
+  Super + arrows                 Move focus
+  Super + Shift + arrows         Move window
+  Super + Alt + arrows           Swap window
+  Super + J                      Toggle split
+
+Workspaces
+  Super + 1..0                   Switch to desktop 1-10
+  Super + Shift + 1..0           Move window to desktop
+  Super + Tab                    Overview
+  Super + S / Super + grave      Scratchpad
+
+Desktop
+  Super + N                      Control center
+  Super + Shift + N              Notification center
+  Super + , / Super + I          Settings
+  Super + K                      This keybinding cheatsheet
+  Super + W                      Wallpaper picker
+  Super + Shift + W              Random wallpaper
+  Super + Shift + T              Theme packs
+  Super + Shift + V              VPN menu
+  Super + Shift + G              Gaming profile toggle
+  Ctrl + Super + Shift + D       Dark / light toggle
+  Super + Shift + Alt + /        Welcome page
+
+Capture
+  Print / Super + Shift + S      Screenshot
+  Super + Alt + S                Screenshot menu
+  Super + Shift + X              OCR a region
+  Super + Shift + R              Screen recording
+  Super + Shift + C              Color picker
+
+Session
+  Super + L                      Lock
+  Super + Shift + L              Suspend
+  Super + Shift + E              Power menu
+  Ctrl + Alt + Delete            Power menu
+EOF
+}
+
+live_sheet() {
+  command -v hyprctl >/dev/null 2>&1 || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  local binds
+  binds="$(hyprctl -j binds 2>/dev/null)" || return 1
+  [[ -n "$binds" && "$binds" != 'null' ]] || return 1
+  printf '%s' "$binds" | jq -r '
+    .[]
+    | select(.key != "")
+    | ((.modmask // 0) as $m
+       | [ (if ($m / 64 | floor) % 2 == 1 then "Super" else empty end),
+           (if ($m / 1 | floor) % 2 == 1 then "Shift" else empty end),
+           (if ($m / 4 | floor) % 2 == 1 then "Ctrl" else empty end),
+           (if ($m / 8 | floor) % 2 == 1 then "Alt" else empty end) ]
+       | join(" + ")) as $mods
+    | "  " + (if $mods == "" then .key else $mods + " + " + .key end)
+      + "\t" + .dispatcher + " " + (.arg // "")
+  ' 2>/dev/null | sed 's|~/.config/navuryx/bin/||; s|/home/[^ ]*/.config/navuryx/bin/||'
+}
+
+sheet_file() {
+  local out
+  out="$(mktemp)"
+  {
+    printf 'Navuryx keybindings\n'
+    curated_sheet
+    printf '\nActive Hyprland binds\n'
+    if ! live_sheet; then
+      printf '  (install jq and run inside a Hyprland session for the live list)\n'
+    fi
+  } > "$out"
+  printf '%s' "$out"
+}
+
+edit_overrides() {
+  local example="${USER_OVERRIDES%.lua}.example.lua"
+  [[ -f "$USER_OVERRIDES" ]] || cp "$example" "$USER_OVERRIDES"
+  if command -v kitty >/dev/null 2>&1; then
+    kitty -e "${EDITOR:-nano}" "$USER_OVERRIDES"
+  else
+    "${EDITOR:-nano}" "$USER_OVERRIDES"
+  fi
+  notify 'Keybinds' 'Reload Hyprland to apply overrides'
+}
+
+case "${1:-}" in
+  --print)
+    curated_sheet
+    exit 0
+    ;;
+  --edit)
+    edit_overrides
+    exit 0
+    ;;
+  --menu)
+    choice="$(printf '%s\n' 'Show cheatsheet' 'Edit keybind overrides' 'Reload Hyprland' | menu -p 'Keybindings')" || exit 0
+    case "$choice" in
+      Show*) open_terminal_file "$(sheet_file)" 'Navuryx keybindings' ;;
+      Edit*) edit_overrides ;;
+      Reload*) hyprctl reload >/dev/null && notify 'Keybinds' 'Hyprland reloaded' ;;
+    esac
+    exit 0
+    ;;
+esac
+
+open_terminal_file "$(sheet_file)" 'Navuryx keybindings'

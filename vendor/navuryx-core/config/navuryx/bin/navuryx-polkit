@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+for agent in /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 /usr/libexec/polkit-gnome-authentication-agent-1 /usr/lib/polkit-kde-authentication-agent-1; do
+  if [[ -x "$agent" ]]; then
+    if ! pgrep -f "$(basename "$agent")" >/dev/null; then
+      nohup "$agent" >/dev/null 2>&1 &
+    fi
+    exit 0
+  fi
+done

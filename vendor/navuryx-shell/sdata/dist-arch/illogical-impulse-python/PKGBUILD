@@ -1,0 +1,16 @@
+groups=(illogical-impulse)
+pkgname=illogical-impulse-python
+pkgver=1.1
+pkgrel=5
+pkgdesc='Navuryx Python Dependencies'
+arch=(any)
+license=(None)
+depends=(
+  clang
+  uv
+  gtk4
+  libadwaita
+  libsoup3
+  libportal-gtk4
+  gobject-introspection
+)

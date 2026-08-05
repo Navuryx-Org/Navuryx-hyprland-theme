@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Navuryx is a complete Hyprland desktop with a guided installer, unified Quickshell interface, recovery tools and application setup.">
+  <title>Navuryx Hyprland</title>
+  <link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+<header class="site-header">
+  <nav class="navbar shell" aria-label="Main navigation">
+    <a class="brand" href="index.html"><img src="assets/images/navuryx.svg" alt=""><span>Navuryx <small>Hyprland</small></span></a>
+    <button class="nav-toggle" data-nav-toggle aria-expanded="false" aria-label="Open navigation">Menu</button>
+    <div class="nav-links" data-nav-links>
+      <a href="features.html">Features</a><a href="themes.html">Themes</a><a href="install.html">Install</a><a href="uninstall.html">Remove</a><a href="troubleshooting.html">Docs</a><a class="github" href="https://github.com/navuryx-org/navuryx-hyprland-theme">GitHub</a>
+    </div>
+  </nav>
+</header>
+<main>
+  <section class="hero">
+    <div class="hero-grid shell">
+      <div>
+        <p class="eyebrow">Complete Hyprland environment</p>
+        <h1>A desktop you can actually live in.</h1>
+        <p class="lede">Navuryx brings the shell, theming, system controls, application setup and recovery tools into one deliberate desktop—without making users assemble a dozen unrelated dotfile projects.</p>
+        <div class="actions"><a class="button primary" href="install.html">Install Navuryx</a><a class="button secondary" href="features.html">Explore the desktop</a></div>
+        <div class="hero-notes"><span><b>Quickshell</b> primary UI</span><span><b>Waybar + Rofi</b> recovery</span><span><b>Arch</b> first-class</span></div>
+      </div>
+      <div class="desktop" aria-label="Navuryx desktop interface preview">
+        <div class="desktop-bar"><div class="workspaces"><span class="active">1</span><span>2</span><span>3</span></div><span>Navuryx</span><span class="desktop-status">VPN · 72% · 02:09</span></div>
+        <div class="desktop-body">
+          <div class="spotlight"><div class="spotlight-head">SPOTLIGHT<strong>Search applications, files and actions</strong></div><div class="result active"><span>Navuryx Settings</span><kbd>Enter</kbd></div><div class="result"><span>Open terminal</span><kbd>Super Enter</kbd></div><div class="result"><span>Switch wallpaper</span><kbd>Super W</kbd></div><div class="result"><span>Ask Navuryx AI</span><kbd>Super A</kbd></div></div>
+          <aside class="control-panel"><strong>System</strong><div class="toggle-grid"><span class="on">Wi-Fi</span><span>Bluetooth</span><span class="on">VPN</span><span>Gaming</span></div><div class="meter"><i></i></div><small>Volume 72%</small></aside>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section"><div class="shell"><div class="section-head"><p class="eyebrow">One guided setup</p><h2>Pick your applications. Keep control of your system.</h2><p>The installer checks the machine, prepares dependencies in consolidated batches, backs up existing configuration and records every file it manages.</p></div><div class="grid-3"><article class="card"><span class="index">01 / CHOOSE</span><h3>Multi-select your tools</h3><p>Choose several browsers, chat clients, VPN tools, media apps and creator applications using numbers, lists or ranges.</p></article><article class="card"><span class="index">02 / INSTALL</span><h3>Fast package planning</h3><p>Repository availability is indexed once, packages are deduplicated and installs are grouped to reduce repeated Pacman and AUR work.</p></article><article class="card"><span class="index">03 / RECOVER</span><h3>Uninstall without guessing</h3><p>Managed files, partial installs and backups are tracked. Removal can restore the desktop that existed before Navuryx.</p></article></div></div></section>
+
+  <section class="section"><div class="split shell"><div><p class="eyebrow">Unified desktop</p><h2>The pieces work like one system.</h2><ul class="list"><li><strong>Spotlight and application launcher</strong>Applications, windows, files, settings and commands in one search surface.</li><li><strong>AI and screen tools</strong>Local-first provider support, OCR, capture and desktop-aware workflows.</li><li><strong>System center</strong>Audio, network, Bluetooth, power, media, VPN and gaming controls.</li><li><strong>Recovery environment</strong>Waybar and Rofi remain available when the primary shell needs repair.</li></ul></div><div class="terminal"><div class="terminal-head"><span>Install from GitHub</span><button class="copy" data-copy="#home-install">Copy</button></div><pre id="home-install">git clone https://github.com/navuryx-org/navuryx-hyprland-theme.git
+cd navuryx-hyprland-theme
+chmod +x install.sh uninstall.sh navuryx
+./install.sh</pre></div></div></section>
+</main>
+<footer><div class="footer-grid shell"><span>Navuryx Hyprland</span><span>© 2026 Navuryx / HitBoyXx23</span></div></footer>
+<script src="assets/js/site.js"></script>
+</body>
+</html>

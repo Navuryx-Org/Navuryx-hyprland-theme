@@ -1,0 +1,174 @@
+@define-color bg rgba(2, 2, 8, 0.94);
+@define-color surface rgba(8, 8, 18, 0.96);
+@define-color surface2 rgba(14, 14, 28, 0.97);
+@define-color text #b8c0e8;
+@define-color muted #5c5c88;
+@define-color blue #3558d4;
+@define-color purple #7a24c9;
+@define-color danger #e04570;
+@define-color accent-grad linear-gradient(90deg, #3558d4, #7a24c9);
+
+@import "navuryx-appearance.css";
+
+* {
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+  font-family: "JetBrainsMono Nerd Font";
+  font-size: 13px;
+}
+
+window#waybar {
+  background: transparent;
+  color: @text;
+}
+
+.modules-left,
+.modules-center,
+.modules-right {
+  background: @bg;
+  border: 1px solid rgba(53, 88, 212, 0.28);
+  border-radius: 14px;
+  padding: 0 5px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+}
+
+#custom-spotlight,
+#custom-ai,
+#custom-vpn,
+#custom-gaming,
+#custom-settings,
+#custom-power,
+#clock,
+#network,
+#pulseaudio,
+#backlight,
+#memory,
+#cpu,
+#battery,
+#tray,
+#window,
+#mpris,
+#idle_inhibitor {
+  padding: 0 10px;
+  margin: 5px 2px;
+  border-radius: 10px;
+  background: @surface;
+}
+
+#custom-spotlight {
+  color: @blue;
+  font-size: 17px;
+}
+
+#custom-ai {
+  color: @purple;
+  font-size: 16px;
+}
+
+#custom-settings {
+  color: #7f8fd6;
+}
+
+#custom-vpn {
+  color: #4a5578;
+}
+
+#custom-vpn.connected {
+  color: #3cb86e;
+}
+
+#custom-gaming {
+  color: #4a5578;
+}
+
+#custom-gaming.active {
+  color: @purple;
+}
+
+#custom-power {
+  color: @danger;
+}
+
+#mpris {
+  color: #8f9acc;
+}
+
+#idle_inhibitor.activated {
+  color: @blue;
+}
+
+#backlight {
+  color: #c9a84a;
+}
+
+#pulseaudio {
+  color: #7a9ad6;
+}
+
+#network {
+  color: #5aa8c4;
+}
+
+#cpu {
+  color: #8f7cc8;
+}
+
+#memory {
+  color: #7a86c8;
+}
+
+#workspaces {
+  padding: 0 4px;
+}
+
+#workspaces button {
+  color: @muted;
+  padding: 0 7px;
+  margin: 5px 2px;
+  border-radius: 9px;
+  background: transparent;
+  min-width: 22px;
+}
+
+#workspaces button:hover {
+  background: rgba(53, 88, 212, 0.22);
+  color: @text;
+}
+
+#workspaces button.active {
+  color: #e8ecff;
+  background-color: @blue;
+  background-image: linear-gradient(90deg, @blue, @purple);
+}
+
+#workspaces button.urgent {
+  color: @danger;
+}
+
+#workspaces button.empty {
+  color: #3a3a58;
+}
+
+#window {
+  color: #8f9acc;
+}
+
+#battery.warning {
+  color: #c9a84a;
+}
+
+#battery.critical {
+  color: @danger;
+}
+
+#battery.charging {
+  color: #3cb86e;
+}
+
+tooltip {
+  background: @surface2;
+  color: @text;
+  border: 1px solid @blue;
+  border-radius: 10px;
+}

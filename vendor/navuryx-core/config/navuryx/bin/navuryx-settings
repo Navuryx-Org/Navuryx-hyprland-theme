@@ -1,0 +1,562 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+
+PROFILE_DIR="$NAV_DATA/profiles"
+SHELL_CFG="$NAV_CONFIG/bin/navuryx-shell-config"
+BIN="$NAV_CONFIG/bin"
+QS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell/navuryx"
+mkdir -p "$PROFILE_DIR"
+
+BACK='< Back'
+
+apply_profile() {
+  local name="$1"
+  case "$name" in
+    gaming)
+      hyprctl keyword 'decoration:blur:enabled' false >/dev/null
+      hyprctl keyword 'decoration:shadow:enabled' false >/dev/null
+      hyprctl keyword 'animations:enabled' false >/dev/null
+      hyprctl keyword 'debug:vfr' false >/dev/null
+      printf 'gaming' > "$PROFILE_DIR/active"
+      notify 'Profile' 'Gaming: blur, shadows, and animations reduced'
+      ;;
+    presentation)
+      hyprctl keyword 'decoration:blur:enabled' true >/dev/null
+      hyprctl keyword 'animations:enabled' true >/dev/null
+      hyprctl keyword 'debug:vfr' true >/dev/null
+      printf 'presentation' > "$PROFILE_DIR/active"
+      notify 'Profile' 'Presentation: stable visuals enabled'
+      ;;
+    battery)
+      hyprctl keyword 'decoration:blur:enabled' false >/dev/null
+      hyprctl keyword 'decoration:shadow:enabled' false >/dev/null
+      hyprctl keyword 'animations:enabled' false >/dev/null
+      hyprctl keyword 'debug:vfr' true >/dev/null
+      printf 'battery' > "$PROFILE_DIR/active"
+      notify 'Profile' 'Battery: compositor effects reduced'
+      ;;
+    default)
+      hyprctl reload >/dev/null
+      printf 'default' > "$PROFILE_DIR/active"
+      "$SHELL_CFG" apply >/dev/null 2>&1 || true
+      notify 'Profile' 'Default Navuryx look restored'
+      ;;
+  esac
+}
+
+set_option() {
+  local key="$1" value="$2"
+  "$SHELL_CFG" set "$key" "$value"
+}
+
+get_option() {
+  "$SHELL_CFG" get "$1" "${2:-}"
+}
+
+prompt_value() {
+  local label="$1" current="$2" value
+  value="$(printf '%s\n' "$current" | menu -p "$label")" || return 1
+  [[ -n "$value" ]] || return 1
+  printf '%s' "$value"
+}
+
+set_waybar_position() {
+  local pos
+  pos="$(printf '%s\n' top bottom left right | menu -p 'Waybar position')" || return 0
+  [[ -n "$pos" ]] || return 0
+  set_option waybar_position "$pos"
+  "$SHELL_CFG" restart-waybar
+  notify 'Waybar' "Position: $pos"
+}
+
+set_gaps() {
+  local choice gin gout
+  choice="$(printf '%s\n' 'Compact (4/10)' 'Default (6/14)' 'Comfortable (8/18)' 'Wide (10/24)' 'Custom gaps' | menu -p 'Gaps')" || return 0
+  case "$choice" in
+    Compact*) gin=4; gout=10 ;;
+    Default*) gin=6; gout=14 ;;
+    Comfortable*) gin=8; gout=18 ;;
+    Wide*) gin=10; gout=24 ;;
+    Custom*)
+      gin="$(prompt_value 'gaps_in' "$(get_option gaps_in 6)")" || return 0
+      gout="$(prompt_value 'gaps_out' "$(get_option gaps_out 14)")" || return 0
+      ;;
+    *) return 0 ;;
+  esac
+  set_option gaps_in "$gin"
+  set_option gaps_out "$gout"
+  "$SHELL_CFG" apply-gaps
+  notify 'Gaps' "in=$gin out=$gout"
+}
+
+set_rounding() {
+  local value
+  value="$(printf '%s\n' 0 6 10 14 18 24 | menu -p 'Corner rounding')" || return 0
+  [[ -n "$value" ]] || return 0
+  set_option rounding "$value"
+  "$SHELL_CFG" apply-gaps
+  notify 'Appearance' "Rounding: $value"
+}
+
+set_border() {
+  local value
+  value="$(printf '%s\n' 0 1 2 3 4 | menu -p 'Border size')" || return 0
+  [[ -n "$value" ]] || return 0
+  set_option border_size "$value"
+  "$SHELL_CFG" apply-gaps
+  notify 'Appearance' "Border: $value"
+}
+
+toggle_blur() {
+  local cur next
+  cur="$(get_option blur_enabled 1)"
+  if [[ "$cur" == 1 ]]; then next=0; else next=1; fi
+  set_option blur_enabled "$next"
+  "$SHELL_CFG" apply-gaps
+  notify 'Appearance' "Blur: $next"
+}
+
+toggle_bar() {
+  local cur next
+  cur="$(get_option waybar_visible 1)"
+  if [[ "$cur" == 1 ]]; then next=0; else next=1; fi
+  set_option waybar_visible "$next"
+  "$SHELL_CFG" restart-waybar
+  if [[ "$next" == 1 ]]; then
+    notify 'Waybar' 'Visible'
+  else
+    notify 'Waybar' 'Hidden'
+  fi
+}
+
+set_workspace_count() {
+  local value
+  value="$(printf '%s\n' 5 6 8 10 12 15 20 | menu -p 'Persistent workspaces')" || return 0
+  [[ -n "$value" ]] || return 0
+  set_option persistent_workspaces "$value"
+  "$SHELL_CFG" restart-waybar
+  notify 'Workspaces' "Persistent: $value"
+}
+
+set_input_option() {
+  local key="$1" label="$2"
+  shift 2
+  local value
+  value="$(printf '%s\n' "$@" | menu -p "$label")" || return 0
+  [[ -n "$value" ]] || return 0
+  set_option "$key" "$value"
+  "$SHELL_CFG" apply-input
+  notify 'Input' "$label: $value"
+}
+
+restart_quickshell() {
+  pkill -x qs >/dev/null 2>&1 || true
+  pkill -x quickshell >/dev/null 2>&1 || true
+  if command -v qs >/dev/null 2>&1; then
+    nohup qs -c navuryx >/dev/null 2>&1 &
+  elif command -v quickshell >/dev/null 2>&1; then
+    nohup quickshell -c navuryx >/dev/null 2>&1 &
+  else
+    notify 'Navuryx' 'Quickshell not installed'
+  fi
+}
+
+run_updates() {
+  local choice
+  choice="$(printf '%s\n' 'Update system packages' 'Update AUR packages' 'Update Flatpak apps' 'Check Navuryx repository' | menu -p 'Updates')" || return 0
+  case "$choice" in
+    'Update system packages')
+      open_terminal_command 'sudo pacman -Syu'
+      ;;
+    'Update AUR packages')
+      if command -v yay >/dev/null 2>&1; then
+        open_terminal_command 'yay -Syu'
+      else
+        notify 'Updates' 'yay is not installed'
+      fi
+      ;;
+    'Update Flatpak apps')
+      if command -v flatpak >/dev/null 2>&1; then
+        open_terminal_command 'flatpak update'
+      else
+        notify 'Updates' 'Flatpak is not installed'
+      fi
+      ;;
+    'Check Navuryx repository')
+      notify 'Updates' 'https://github.com/Navuryx-Org/Navuryx-hyprland-theme'
+      ;;
+  esac
+}
+
+open_terminal_command() {
+  local cmd="$1"
+  if command -v kitty >/dev/null 2>&1; then
+    kitty -e bash -lc "$cmd; printf '\nPress Enter to close…'; read -r _"
+  else
+    notify 'Navuryx' "Run manually: $cmd"
+  fi
+}
+
+page_appearance() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Appearance mode (Auto/Dark/Light)' \
+      'Theme packs' \
+      'Corner rounding' \
+      'Border size' \
+      'Toggle blur' \
+      'Gaps' \
+      'Reload Hyprland' \
+      "$BACK" | menu -p 'Appearance')" || return 0
+    case "$choice" in
+      'Appearance mode'*) "$BIN/navuryx-appearance" --menu ;;
+      'Theme packs') "$BIN/navuryx-theme" ;;
+      'Corner rounding') set_rounding ;;
+      'Border size') set_border ;;
+      'Toggle blur') toggle_blur ;;
+      Gaps) set_gaps ;;
+      'Reload Hyprland') hyprctl reload >/dev/null; "$SHELL_CFG" apply; notify 'Navuryx' 'Hyprland reloaded' ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_bar() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Waybar position' \
+      'Toggle Waybar visibility' \
+      'Restart Waybar' \
+      'Restart Quickshell panel' \
+      "$BACK" | menu -p 'Bar')" || return 0
+    case "$choice" in
+      'Waybar position') set_waybar_position ;;
+      'Toggle Waybar'*) toggle_bar ;;
+      'Restart Waybar') "$SHELL_CFG" restart-waybar; notify 'Navuryx' 'Waybar restarted' ;;
+      'Restart Quickshell'*) restart_quickshell ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_workspaces() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Workspace overview' \
+      'Persistent workspace count' \
+      'Reload Hyprland' \
+      "$BACK" | menu -p 'Workspaces')" || return 0
+    case "$choice" in
+      'Workspace overview') "$BIN/navuryx-overview" ;;
+      'Persistent workspace count') set_workspace_count ;;
+      'Reload Hyprland') hyprctl reload >/dev/null; notify 'Navuryx' 'Hyprland reloaded' ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_wallpaper() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Change wallpaper' \
+      'Wallpaper next' \
+      'Wallpaper random' \
+      'Per-monitor wallpaper' \
+      'Clear per-monitor wallpapers' \
+      'Wallpaper automation' \
+      "$BACK" | menu -p 'Wallpaper')" || return 0
+    case "$choice" in
+      'Change wallpaper') "$BIN/navuryx-wallpaper" ;;
+      'Wallpaper next') "$BIN/navuryx-wallpaper" --next ;;
+      'Wallpaper random') "$BIN/navuryx-wallpaper" --random ;;
+      'Per-monitor wallpaper') "$BIN/navuryx-wallpaper" --per-monitor ;;
+      'Clear per-monitor'*) "$BIN/navuryx-wallpaper" --clear-monitors ;;
+      'Wallpaper automation') "$BIN/navuryx-wallpaper" --auto ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_input() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      "Keyboard layout ($(get_option kb_layout us))" \
+      "Key repeat rate ($(get_option repeat_rate 35))" \
+      "Key repeat delay ($(get_option repeat_delay 280))" \
+      "Mouse natural scroll ($(get_option natural_scroll 0))" \
+      "Touchpad natural scroll ($(get_option touchpad_natural_scroll 1))" \
+      "Pointer sensitivity ($(get_option sensitivity 0))" \
+      "Acceleration profile ($(get_option accel_profile flat))" \
+      "$BACK" | menu -p 'Input')" || return 0
+    case "$choice" in
+      'Keyboard layout'*) set_input_option kb_layout 'Keyboard layout' us gb de fr es it se no fi pl ru ;;
+      'Key repeat rate'*) set_input_option repeat_rate 'Key repeat rate' 25 30 35 40 50 ;;
+      'Key repeat delay'*) set_input_option repeat_delay 'Key repeat delay' 200 250 280 320 400 ;;
+      'Mouse natural scroll'*) set_input_option natural_scroll 'Mouse natural scroll' 0 1 ;;
+      'Touchpad natural scroll'*) set_input_option touchpad_natural_scroll 'Touchpad natural scroll' 0 1 ;;
+      'Pointer sensitivity'*) set_input_option sensitivity 'Pointer sensitivity' -0.5 -0.2 0 0.2 0.5 ;;
+      'Acceleration profile'*) set_input_option accel_profile 'Acceleration profile' flat adaptive ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_keybinds() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Show keybinding cheatsheet' \
+      'Edit keybind overrides' \
+      'Edit user overrides file' \
+      "$BACK" | menu -p 'Keybindings')" || return 0
+    case "$choice" in
+      'Show keybinding'*) "$BIN/navuryx-keybinds" ;;
+      'Edit keybind overrides') "$BIN/navuryx-keybinds" --edit ;;
+      'Edit user overrides file')
+        file="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/navuryx/user.lua"
+        [[ -f "$file" ]] || cp "${file%.lua}.example.lua" "$file"
+        kitty -e "${EDITOR:-nano}" "$file"
+        ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_power() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Lock now' \
+      'Power menu' \
+      'Idle inhibitor toggle' \
+      'Night light toggle' \
+      'Battery profile' \
+      'Default profile' \
+      "$BACK" | menu -p 'Power and session')" || return 0
+    case "$choice" in
+      'Lock now') hyprlock ;;
+      'Power menu') "$BIN/navuryx-power" ;;
+      'Idle inhibitor toggle')
+        if pgrep -x hypridle >/dev/null 2>&1; then
+          pkill -x hypridle || true
+          notify 'Power' 'Idle inhibitor on'
+        else
+          nohup hypridle >/dev/null 2>&1 &
+          notify 'Power' 'Idle inhibitor off'
+        fi
+        ;;
+      'Night light toggle')
+        if command -v hyprsunset >/dev/null 2>&1; then
+          if pgrep -x hyprsunset >/dev/null 2>&1; then
+            pkill -x hyprsunset || true
+            notify 'Power' 'Night light off'
+          else
+            nohup hyprsunset >/dev/null 2>&1 &
+            notify 'Power' 'Night light on'
+          fi
+        else
+          notify 'Power' 'Install hyprsunset for night light'
+        fi
+        ;;
+      'Battery profile') apply_profile battery ;;
+      'Default profile') apply_profile default ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_capture() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Screenshot menu' \
+      'Region screenshot' \
+      'OCR a region' \
+      'Screen recording' \
+      'Clipboard history' \
+      "$BACK" | menu -p 'Screenshots and capture')" || return 0
+    case "$choice" in
+      'Screenshot menu') "$BIN/navuryx-screenshot" --menu ;;
+      'Region screenshot') "$BIN/navuryx-screenshot" ;;
+      'OCR a region') "$BIN/navuryx-screenshot" ocr ;;
+      'Screen recording') "$BIN/navuryx-record" ;;
+      'Clipboard history') "$BIN/navuryx-clipboard" ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_ai() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Open AI assistant' \
+      'Ask about a screen region' \
+      'Set up local AI' \
+      "$BACK" | menu -p 'AI')" || return 0
+    case "$choice" in
+      'Open AI assistant') "$BIN/navuryx-ai" ;;
+      'Ask about'*) "$BIN/navuryx-ask-screen" ;;
+      'Set up local AI') kitty --class navuryx-ai -e "$BIN/navuryx-ai-setup" ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_gaming() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      "Toggle gaming mode ($("$BIN/navuryx-gaming" --status))" \
+      'Gaming profile' \
+      'Presentation profile' \
+      'Battery profile' \
+      'Default profile' \
+      "$BACK" | menu -p 'Gaming and performance')" || return 0
+    case "$choice" in
+      'Toggle gaming mode'*) "$BIN/navuryx-gaming" ;;
+      'Gaming profile') apply_profile gaming ;;
+      'Presentation profile') apply_profile presentation ;;
+      'Battery profile') apply_profile battery ;;
+      'Default profile') apply_profile default ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_network() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      "VPN menu ($("$BIN/navuryx-vpn" --status))" \
+      'Connect VPN' \
+      'Disconnect VPN' \
+      'Wi-Fi and connections' \
+      "$BACK" | menu -p 'Network and VPN')" || return 0
+    case "$choice" in
+      'VPN menu'*) "$BIN/navuryx-vpn" ;;
+      'Connect VPN') "$BIN/navuryx-vpn" --connect ;;
+      'Disconnect VPN') "$BIN/navuryx-vpn" --disconnect ;;
+      'Wi-Fi and connections')
+        if command -v nm-connection-editor >/dev/null 2>&1; then
+          nohup nm-connection-editor >/dev/null 2>&1 &
+        else
+          notify 'Network' 'Install network-manager-applet'
+        fi
+        ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+page_diagnostics() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Run Navuryx doctor' \
+      'Feature registry' \
+      'Show shortcuts' \
+      'Restart notifications' \
+      "$BACK" | menu -p 'Diagnostics')" || return 0
+    case "$choice" in
+      'Run Navuryx doctor') "$BIN/navuryx-doctor" ;;
+      'Feature registry') "$BIN/navuryx-features" ;;
+      'Show shortcuts') "$BIN/navuryx-keybinds" ;;
+      'Restart notifications') "$BIN/navuryx-notifications" ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+main_menu() {
+  local choice
+  while true; do
+    choice="$(printf '%s\n' \
+      'Appearance' \
+      'Bar' \
+      'Workspaces' \
+      'Wallpaper' \
+      'Input' \
+      'Keybindings' \
+      'Power and session' \
+      'Screenshots and capture' \
+      'AI' \
+      'Gaming and performance' \
+      'Network and VPN' \
+      'Updates' \
+      'Backups and restore' \
+      'Diagnostics' \
+      'Control center' \
+      'Notifications' \
+      'Welcome page' \
+      'Quit' | menu -p 'Navuryx settings')" || return 0
+    case "$choice" in
+      Appearance) page_appearance ;;
+      Bar) page_bar ;;
+      Workspaces) page_workspaces ;;
+      Wallpaper) page_wallpaper ;;
+      Input) page_input ;;
+      Keybindings) page_keybinds ;;
+      'Power and session') page_power ;;
+      'Screenshots and capture') page_capture ;;
+      AI) page_ai ;;
+      'Gaming and performance') page_gaming ;;
+      'Network and VPN') page_network ;;
+      Updates) run_updates ;;
+      'Backups and restore') "$BIN/navuryx-backup" ;;
+      Diagnostics) page_diagnostics ;;
+      'Control center') "$BIN/navuryx-control" ;;
+      Notifications) "$BIN/navuryx-notifications" ;;
+      'Welcome page') "$BIN/navuryx-welcome" --force ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+launch_qs_settings() {
+  local file="$QS_DIR/settings.qml"
+  [[ -f "$file" ]] || return 1
+  if command -v qs >/dev/null 2>&1; then
+    qs -p "$file" >/dev/null 2>&1 &
+    disown || true
+    return 0
+  fi
+  if command -v quickshell >/dev/null 2>&1; then
+    quickshell -p "$file" >/dev/null 2>&1 &
+    disown || true
+    return 0
+  fi
+  return 1
+}
+
+case "${1:-}" in
+  --profile)
+    [[ -n "${2:-}" ]] || { printf 'Usage: navuryx-settings --profile NAME\n' >&2; exit 2; }
+    apply_profile "$2"
+    exit 0
+    ;;
+  --ui)
+    launch_qs_settings || true
+    exit 0
+    ;;
+  --welcome)
+    "$BIN/navuryx-welcome" --force
+    exit 0
+    ;;
+  --menu)
+    main_menu
+    exit 0
+    ;;
+esac
+
+if launch_qs_settings; then
+  exit 0
+fi
+
+main_menu

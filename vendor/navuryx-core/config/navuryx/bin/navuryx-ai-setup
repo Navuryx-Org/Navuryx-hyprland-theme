@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "${XDG_CONFIG_HOME:-$HOME/.config}/navuryx/bin/navuryx-common"
+env_file="$NAV_CONFIG/ai.env"
+[[ -f "$env_file" ]] || { cp "$NAV_CONFIG/ai.env.example" "$env_file"; chmod 600 "$env_file"; }
+# shellcheck disable=SC1090
+source "$env_file"
+model="${NAVURYX_AI_MODEL:-gemma3:4b}"
+if ! command -v ollama >/dev/null 2>&1; then
+  cat <<'EOF'
+Ollama is not installed.
+Official Linux installation command:
+  curl -fsSL https://ollama.com/install.sh | sh
+Then run this setup command again.
+EOF
+  exit 1
+fi
+if ! curl -fsS "${NAVURYX_OLLAMA_URL:-http://127.0.0.1:11434}/api/tags" >/dev/null 2>&1; then
+  mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}"
+  nohup ollama serve >"${XDG_STATE_HOME:-$HOME/.local/state}/navuryx-ollama.log" 2>&1 &
+  sleep 2
+fi
+if ! ollama list 2>/dev/null | awk 'NR>1 {print $1}' | grep -Fxq "$model"; then
+  printf 'Pulling local AI model %s...\n' "$model"
+  ollama pull "$model"
+fi
+printf 'Navuryx AI is ready with model %s.\n' "$model"
